@@ -226,8 +226,6 @@ with tf.device('device:GPU:0'):
     # define eli5 score importances - permutation importance, we only use this for importance of each time period now.
     def score(X,y):
          y_predict_classes = np.argmax(model.predict(X), axis=-1)
-         #y_predict = model.predict(X)
-         #return mean_squared_error(y, y_predict)
          return accuracy_score(y,y_predict_classes)
     #Set runtime options
     optoption = 'AdamW'
