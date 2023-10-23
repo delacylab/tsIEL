@@ -1,5 +1,4 @@
-#Copyright 2021 Nina de Lacy
-
+#Copyright 2023 Nina de Lacy and Michael Ramshaw
    #Licensed under the Apache License, Version 2.0 (the "License");
    #you may not use this file except in compliance with the License.
    #You may obtain a copy of the License at
@@ -46,19 +45,21 @@ parser.add_argument('threshold',help='lasso threshold to use')
 parser.add_argument('UseTPs',help='Use TPs or regular directory')
 parser.add_argument('tps',help='should look like 0123')
 args = parser.parse_args()
-target = args.target
-SD = args.SD
-IDkey = args.IDkey
-threshold = args.threshold
-UseTPs = args.UseTPs
+target = args.target #Condition such as anxiety or somatic 
+SD = args.SD         #standard deviations - see recursion script
+IDkey = args.IDkey   #row level subject identification column for dataset - for ABCD V4, it is subjectkey
+threshold = args.threshold #Lasso coefficient threshold for columns to be included in dataset, we used 0.0
+UseTPs = args.UseTPs  #False = determine important features based on mean of feature importance over time periods 
+#True means important features are determined with feature/time point specificity.
 if UseTPs == "True":
    print("using time periods")
 time_periods = str(args.tps) 
 
 start_time = time.time()
 
+#Load and construct time series dataset - rep=unseen data
 nanfill = 1
-#time_periods = '0123'
+#time_periods = '0123' #Now a runtime param
 time_periods_list = [int(t) for t in time_periods] #e.g. 02 will be [0,2]
 allTimeLabels = ['baseline', '1Y','2Y','3Y']
 timelabels = [ allTimeLabels[i] for i in time_periods_list ]
@@ -78,6 +79,7 @@ three = pd.read_csv(input_dir + target + '^3_year_rep_combined_DLFS.csv')
 allDFs = [base, one, two, three]
 dfsWeWant = [ allDFs[i] for i in time_periods_list ] 
 
+#Create target cols and make sure we are using correct targets corresponding to subjects in dataset
 for i in range(len(dfsWeWant)):
    if i == 0:
       subsInAll = dfsWeWant[0][['subjectkey']]
@@ -97,7 +99,9 @@ if y['subjectkey'].compare(dfsWeWant[0]['subjectkey']).empty == False:
 y = y[target]
 print('target length should match earliest row count',len(y))
 
-#count columns both by year and determine whether they are timeseries cols or not
+#When constructing timeseries dataset, it is important to know whether columns are unique
+#(only appearing in one time period) or a true timeseries col (column has data for multiple time periods)
+#--count columns both by year and determine whether they are timeseries cols or not
 columnsByYear = {}
 #want list of unique cols that appear in all dfs
 all_cols_list = None
@@ -121,7 +125,7 @@ for k,v in countAllCols.items():
    else:
       timeseries.append(k)
       
-unique_columns = np.unique(all_cols_list) #NOTE this still has subjectkey which we will want to remove at the verrrry end.
+unique_columns = np.unique(all_cols_list) #NOTE this still has subjectkey which we will want to remove at the very end.
 print("Uniques(one time only) + timeseries = num_unique_columns",  len(uniques), len(timeseries), len(unique_columns) )
 print(dfsWeWant[0].shape[0])
 #subject list sanity check
@@ -154,8 +158,7 @@ for timep in range(len(dfsWeWant)):
 
 learn_test = X
 
-
-#We need train as well as test for Shapley.
+#We need train for Shapley background so we have to construct all of that as well.
 baseTrain = pd.read_csv(input_dir + target + '^baseline_tt_combined_DLFS.csv')
 oneTrain = pd.read_csv(input_dir + target + '^1_year_tt_combined_DLFS.csv')
 twoTrain = pd.read_csv(input_dir + target + '^2_year_tt_combined_DLFS.csv')
@@ -217,17 +220,16 @@ for timep in range(len(dfsWeWantTrain)):
 print(np.array_equal(unique_columns_train, unique_columns))
 
 with tf.device('device:GPU:0'):
-    
     #set number of models you wish to evaluate
     accuracy_threshold = 100
     
-    # define eli5 score importances
+    # define eli5 score importances - permutation importance, we only use this for importance of each time period now.
     def score(X,y):
          y_predict_classes = np.argmax(model.predict(X), axis=-1)
          #y_predict = model.predict(X)
          #return mean_squared_error(y, y_predict)
          return accuracy_score(y,y_predict_classes)
-
+    #Set runtime options
     optoption = 'AdamW'
     #Set output filepaths
     basepath = "IEL_ann_validation"
@@ -317,11 +319,14 @@ with tf.device('device:GPU:0'):
     TP_feature_list = []
     count = 0   
     # perform validation
+    #feature is actually a set of 1-15 features identified in recursion as being important.
+    #learning/beta_selects are single values.
     for feature, learning, beta_1, beta_2 in zip(features_select, learning_select, beta_1_select, beta_2_select):
-            print('FEATURE:',feature)         
+            print('FEATURE:',feature)   
+            #The below section deals with naming incongruities. If feature X appears in multiple time periods, it
+            #will be feature X in each individual timeperiod. But we need to name it separately e.g. X_TP0
             indexeses = [] 
             final_col_names = []        
-            #Special work for Timeperiods
             if UseTPs == "True":
                featuresTPs_dict = {}
                for fi in range(len(feature)):
@@ -353,12 +358,11 @@ with tf.device('device:GPU:0'):
             TP_feature_list.append(features_TPs)
             
             root_feature_list.append(final_col_names)
- 
+            #End of determining feature list. #Now we take X[features_we_want]
             X_sample = np.take(learn_test, indexeses, axis=2)
             num_features = len(final_col_names) #len(feature)
             num_features_list.append(num_features)
-            #X_sample = np.asarray(X_sample).astype(np.float32)
-            #X_sample=tf.convert_to_tensor(X_sample)  
+
             if UseTPs == "True":
                for tp in range(X_sample.shape[1]):  
                   for f in range(X_sample.shape[2]): #THIS SHOULD BE same length as learn_train.shape[2]
@@ -368,7 +372,7 @@ with tf.device('device:GPU:0'):
             
             y_true = y
             y_cat = tf.keras.utils.to_categorical(y, num_classes=2)
-        
+            #create model
             model = Sequential()
             model.add(Bidirectional(LSTM(300, activation='tanh', return_sequences=True))) #,input_shape=(final_array.shape[1], final_array.shape[2])))) #
             model.add(Bidirectional(LSTM(300, activation='tanh')))
@@ -388,7 +392,7 @@ with tf.device('device:GPU:0'):
             tp_importances = np.mean(score_decreases, axis=0)
             tp_scores.append(str(tp_importances))
             #New Shapley feature importances method
-            train_subset = np.take(background, indexeses, axis=2)   #background[feature]
+            train_subset = np.take(background, indexeses, axis=2)   #background[feature] - this has to match the set of columns we used in test
             print("right after train_subset=")
             if UseTPs == "True": #NOTE THAT INDEXES SHOULD LINE UP BECAUSE train and test should have same columns
                for tp in range(train_subset.shape[1]):  
@@ -407,7 +411,7 @@ with tf.device('device:GPU:0'):
             else:
                print('SHAP_values is NOT a list. Exiting.',flush=True)
                exit(1)
-            shap_values = shap_values[1]
+            shap_values = shap_values[1] #0/1 targets, we take 1
             np.set_printoptions(threshold=np.inf)
             
             #next line averages the feature values across all rows
@@ -422,10 +426,10 @@ with tf.device('device:GPU:0'):
 
             #BEGIN OF SHAP FEATURES ONLY
             feature_mean_shap = np.mean(shap_values, axis=1)
-            #print(shap_values.shape)  #(76,4,7)
-            #print(shap_values_reshape.shape) #(76,28)         
-            print(feature_mean_shap.shape) #(76,7)
-            test_mean = np.mean(X_sample, axis=1)
+            #print(shap_values.shape)  # shape here is (numRows, numTimePeriods, numFeatures)
+            #print(shap_values_reshape.shape) #shape here is (numRows, numTimePeriods * numFeatures)          
+            print(feature_mean_shap.shape) #shape here is (numRows, numFeatures) 
+            test_mean = np.mean(X_sample, axis=1) #average over time periods so shap has a baseline
             print(test_mean.shape)
             data_frame = pd.DataFrame( test_mean, columns=final_col_names)  
             shap.summary_plot(feature_mean_shap, data_frame, max_display=len(feature_importances), plot_size=(7,5), show=False, color_bar=None, color_bar_label=[], class_names=[],title=None)
@@ -467,12 +471,12 @@ with tf.device('device:GPU:0'):
             plt.tight_layout()
             plt.savefig(shapley_scores_dir + '/Model_' + str(count) + '_shapley_plotTPs.png')
             plt.close()
-            #We want to write out these indvidual files
             shapley_frame = pd.DataFrame(shap_values_reshape, columns=features_TPs)
             shapley_frame.to_csv(shapley_scores_dir + '/Model_' + str(count) + '_shapley_valuesTPs.csv')            
             #END SHAP FEATURES TPS
             
             count += 1
+            #Gather metrics
             accuracy = accuracy_score(y_true, y_predict_classes)
             accuracy_list.append(accuracy)
             precision = average_precision_score  (y_true, y_predict_classes)
