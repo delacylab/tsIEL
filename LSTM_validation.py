@@ -71,11 +71,8 @@ print('Using basedir',base_input_dir)
 input_dir = base_input_dir + str(threshold) + '/'
 targetdf = pd.read_csv('../targets/cbcl_3year_targets_after_methods_rep.csv')
 base = pd.read_csv(input_dir + target + '^baseline_rep_combined_DLFS.csv')
-sixM = pd.read_csv(input_dir + target + '^6_month_rep_combined_DLFS.csv')
 one = pd.read_csv(input_dir + target + '^1_year_rep_combined_DLFS.csv')
-eighteenM = pd.read_csv(input_dir + target + '^18_month_rep_combined_DLFS.csv')
 two = pd.read_csv(input_dir + target + '^2_year_rep_combined_DLFS.csv')
-thirtyM = pd.read_csv(input_dir + target + '^30_month_rep_combined_DLFS.csv')
 three = pd.read_csv(input_dir + target + '^3_year_rep_combined_DLFS.csv')
 
 allDFs = [base, one, two, three]
