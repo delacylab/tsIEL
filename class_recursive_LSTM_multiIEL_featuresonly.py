@@ -42,7 +42,6 @@ parser.add_argument('threshold',help='lasso threshold to use')
 parser.add_argument('tps',help='should look like 0123')
 args = parser.parse_args()
 
-optionfile = open("recursive_options.txt", "r")
 layer_size = 300 
 spp = 100 
 numGens = 401 
