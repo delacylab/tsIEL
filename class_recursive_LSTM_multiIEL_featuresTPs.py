@@ -42,20 +42,14 @@ parser.add_argument('threshold',help='lasso threshold to use')
 parser.add_argument('tps',help='should look like 0123')
 args = parser.parse_args()
 
-optionfile = open("recursive_options.txt", "r")
-layer_size = int(optionfile.readline().rstrip())
-spp = int(optionfile.readline().rstrip()) #sol_per_pop
-numGens = int(optionfile.readline().rstrip()) #num_generations
-optoption = optionfile.readline().rstrip()
-if optoption not in ['Adam','Adamax','Nadam', 'AdamW']:
-  print("Optimizer in option file not supported - must be either Adam, Adamax, or Nadam")
-  exit(1)
-optionfile.close()
+layer_size = 300 
+spp = 100 
+numGens = 401 
+optoption = 'AdamW'
 
 def makeMSEOneOutputModel(iq, outq):
-      #NOTE NOTE NOTE imports are done here because of an odd CUDA limitation that prevents
-      #forked multiprocesses from getting another CUDA context. It may turn out that
-      #getting this CUDA context every time may be time consuming.
+      #Imports are done here because of an odd CUDA limitation that prevents
+      #forked multiprocesses from getting another CUDA context. 
    for rand,learning,beta_1, beta_2, partNum, gpuNum, recursive_features in iter(iq.get,'STOP'):
       import tensorflow as tf
       from tensorflow.keras.optimizers import Adam, Adamax, Nadam
@@ -63,8 +57,6 @@ def makeMSEOneOutputModel(iq, outq):
       from tensorflow.keras.layers import Dense, LSTM, Bidirectional
       from tensorflow.keras.models import Sequential
       import tensorflow_addons as tfa
-      tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-      tf.get_logger().setLevel('ERROR')
       from absl import logging
       logging.set_verbosity(logging.ERROR)
       tf.config.threading.set_inter_op_parallelism_threads(1)
@@ -73,24 +65,18 @@ def makeMSEOneOutputModel(iq, outq):
          physical_devices = tf.config.list_physical_devices('GPU')
          tf.config.set_visible_devices(physical_devices[gpuNum], 'GPU')
          tf.config.experimental.set_memory_growth(physical_devices[gpuNum], True) 
-      #print("Sanity check isnide function X", X,"more sanity check, type(partnum) is ",type(partNum), flush=True)
 
       features = []
       indexeses = []
-      #fun sanity check
-      #if X.shape[2] != len(warm_start_features):
-      #   print("X.shape[2] != len(warm_start_features)")
-      #   exit(1)
-      if partNum == 1:  #X_sample = X.sample(n=rand, axis=1)
+
+      if partNum == 1: 
          rng = np.random.default_rng()
          #IMPORTANT point in next line - we don't want the + 1 after X.shape[2]. This is because indexes is going to be
          #used in unique_columns, a 0-based array.
          indexeses = rng.choice(range(0,X.shape[2]), size=rand, replace=False) 
-         #print("PART 1 indexeses should range from 0 to", X.shape[2], indexeses)
          for indx in indexeses:
             features.append(final_col_names[indx])
-         #print('in func,features is ',features)
-      else: #      PART 2 - X_sample = X[recursive_features].sample(n=rand, axis=1)  #X[rand]
+      else: 
          rng = np.random.default_rng()
          if partNum == 3 and rand != len(recursive_features):
             print("In part 3,rand should = len(recursive_features). Exiting.")
@@ -103,7 +89,6 @@ def makeMSEOneOutputModel(iq, outq):
          if partNum == 3:
             print('these should be equal:',features,recursive_features)
 
-      #easiest to maintain compatibility with how things were always done before
       features = pd.Index(features)
 
       #New part making a new features list for TP/features.         
@@ -115,7 +100,6 @@ def makeMSEOneOutputModel(iq, outq):
  
       X_sample = np.take(X, indexeses, axis=2)
          
-      #END ORIGINAL
       num_features = len(features)
       np.warnings.filterwarnings('error', category=np.VisibleDeprecationWarning)
       #X_sample = np.asarray(X_sample).astype(np.float32)
@@ -137,8 +121,6 @@ def makeMSEOneOutputModel(iq, outq):
       feature_importances_scores_withTPs = []
         
       for train,test in skf.split(X_sample, y): 
-         #X_train = X_sample[train]
-         #X_test = X_sample[test]
          X_train = np.take(X_sample, train, axis=0)
          X_test = np.take(X_sample, test, axis=0)         
          y_train = tf.keras.utils.to_categorical(y[train], num_classes=2)
@@ -154,8 +136,7 @@ def makeMSEOneOutputModel(iq, outq):
          elif optoption == 'Adamax':
            opt = Adamax(learning_rate = learning, beta_1=beta_1, beta_2=beta_2)
          elif optoption == 'AdamW':
-           #This will bear watching. AdamW requires a weight decay parameter. I took default below from website
-           #print("Using adamw")
+           #AdamW requires a weight decay parameter. I took default below from website
            step = tf.Variable(0, trainable=False)
            schedule = tf.optimizers.schedules.PiecewiseConstantDecay([10000, 15000], [1e-0, 1e-1, 1e-2])
            # lr and wd can be a function or a tensor
@@ -173,9 +154,6 @@ def makeMSEOneOutputModel(iq, outq):
          
          model.compile(loss="categorical_crossentropy", optimizer = opt, metrics=['accuracy'])
          early_stopping_monitor = EarlyStopping(monitor='val_loss',patience=3)
-      #Tensorboard quackeries
-      #log_dir = "TBLogs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-      #tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1, profile_batch=(1,5))
          model.fit(X_train,y_train, epochs=200, validation_data = (X_test, y_test), callbacks=[early_stopping_monitor], verbose=0) #callback used to be early_stopping_monitor
          #Used to be keras had model.predict_classes which would give us nice looking predictions
          #like [1,0] for the 2 output neurons. That was too easy to use and now model.predict will
@@ -187,7 +165,6 @@ def makeMSEOneOutputModel(iq, outq):
          resid = y[test] - y_predict_classes
          sse = sum(resid**2)
          sample_size = len(X_sample)
-         #print("So what is sample size anyway,should = numRows", sample_size, X_sample.shape[0])
          num_params = num_features
          #Below handles the sse=0 case
          with np.errstate(divide='raise'):
@@ -196,18 +173,14 @@ def makeMSEOneOutputModel(iq, outq):
             except FloatingPointError:
                fitness = (sample_size * np.log( 0.3 / sample_size)) + (num_params * np.log(sample_size)) 
          fitness_scores.append(fitness)
-         #WE ONLY DO FEATURE IMPORTANCES FOR PART 3 now
+         #Feature importances calculated in part 3 only due to their taking a long time
          if partNum == 1 or partNum == 3:
-            #print("Before shap")     
-            #e = shap.DeepExplainer( model, X_train)
             ge = shap.GradientExplainer( model, X_train)
             shap_values = ge.shap_values(X_test)
             if isinstance(shap_values, list):
                if len (shap_values) != 2:
                  print('shap_values list should be == numClasses', flush=True)
                  exit(1)
-            #   else:
-            #     print('right after DE shap values call, length of list is 2 and [1] shape is ', shap_values[1].shape, flush=True) 
             else:
                print('SHAP_values is NOT a list. Exiting.',flush=True)
                exit(1)
@@ -253,25 +226,18 @@ def makeMSEOneOutputModel(iq, outq):
          mean_tps = np.mean(np.array(tp_scores), axis=0 )
          feature_importances_scores_folds=pd.DataFrame(data=feature_importances_scores) 
          feature_importances_scores_mean = []
-         #print("OLD HONK", len(feature_importances_scores),feature_importances_scores)
          for column in feature_importances_scores_folds:
             col_mean = feature_importances_scores_folds[column].mean()
             feature_importances_scores_mean.append(col_mean)      
-         #print("Old honk things we return", feature_importances_scores_mean)
-         #print("HONK", len(feature_importances_scores_withTPs),feature_importances_scores_withTPs)
          feature_importances_scores_withTPs_mean = np.mean(feature_importances_scores_withTPs, axis=0)
-         #print("Honk honk should be num_TP x num_features", feature_importances_scores_withTPs_mean)
-         #IT IS!!!!! But we need to flatten it? Or do we?
          features_TPs_flatten = []
          countercheck = 0
          for f in range(len(features)):
             for t in range(X.shape[1]):
-               #print('Feature,value',features[f], feature_importances_scores_withTPs_mean[t, f ])
                if features[f] not in features_TPs[countercheck]:
                   print('feature name mismatch')
                features_TPs_flatten.append(feature_importances_scores_withTPs_mean[t, f ])
-               countercheck += 1
-         #print('return this?',features_TPs_flatten)                      
+               countercheck += 1                    
       else:
          feature_importances_scores_mean = [0 for i in range(num_features)]
          mean_tps = [0 for i in range(num_features)]
@@ -290,12 +256,6 @@ def makeMSEOneOutputModel(iq, outq):
          mean_auc = -999999.0
 
       outq.put( (features, mean_fitness, feature_importances_scores_mean, num_features, mean_accuracy, mean_precision,mean_recall, mean_f1, mean_auc,learning,beta_1, beta_2, mean_tps, features_TPs, features_TPs_flatten ) )
-#tf.debugging.set_log_device_placement(True)
-#mirrored_strategy = tf.distribute.MirroredStrategy(devices=GPUsToUse) 
-
-#Thresholds go here which will vary by project
-#threshold_warm_start = np.float64(0.028)  #(0.0455)
-#threshold_recursive = 0.06425 #0.08173
 
 prog_start_time = time.time()
 targ = args.target
@@ -317,15 +277,12 @@ QUEUE_SIZE = coresPerGPU * numOfGPUs  #This 32 will need to be adjusted dependin
 if QUEUE_SIZE > len(os.sched_getaffinity(0)):
     print("More cores requested than are avaialble. Exiting.")
     exit(1)
-#I want to set output paths here now even though they're not used until the end
-#create filepaths
 
 #BEGINNING OF recursion code to bring in previous results
 #INPUT PATHS HERE - get results of prior trained models from resample
 #stored in dirs like IEL_ann_resample/phenotypic/anx_pres/
 #NOTE: First column dropped in the input files is an index column and has
 #been verified to still be there even with all my changes so we will keep it.
-#input_basepath = 'IEL_ann_resample/' + fname + os.path.sep + fname + '_' + optoption
 input_basepath = "IEL_ann_resample_" + time_periods
 if weighted == "True":
    input_basepath += '_weightedavg'
@@ -352,12 +309,7 @@ features = features.drop(features.columns[0], axis=1)
 importances_filename = input_basepath + "_TPimportances.csv"
 importances = pd.read_csv(importances_filename)
 importances = importances.drop(importances.columns[0], axis=1)
-#END OF INPUT GETTING FROM PREVIOUS STAGE
-
-#BEGIN of OUTPUT PATH SETTING
-#Not gret that we're reusing variable names here for input files and
-#output files but since we have features, importances, models at this point
-#we shoould be good
+#END of getting previous resample results
 
 basepath = "IEL_ann_recursiveTPs_" + time_periods + os.path.sep + fname + os.path.sep + str(SD) + "SD" + os.path.sep
 os.makedirs(basepath) #exist_ok=True is a param I could use but I don't think I want to.
@@ -372,20 +324,12 @@ importances_path = fname + '_' + optoption + "_importances" + str(SD) + "SD"
 full_importances_path = os.path.join(basepath,importances_path)
 importances_filename = full_importances_path + '.csv'
 importances_TP_filename = full_importances_path + '_TP.csv'
-#END OF OUTPUT PATH SETTING
+#End of output path setting
 
-
-#END OF recursion code to bring in previous results
 print("Running " + targ + " with this many GPUs: " + str(numOfGPUs) + " and total # of cores is " + str(QUEUE_SIZE), flush=True)
 #becuase we need the GPU (mem size of 32 * numOfGPUs) < GPU_Max_Mem_Size (e.g. 40GB)
 #Ideally we would know mem size of one process run in advance and then we could get GPU
-#Max mem size from nvidia-smi and divide accordingly with safety factor. But it's like
-# you would need to know the number before you would know it, unless there is a way to
-#convert matrix input size to size taken on GPU in advance.
-#ANOTHER consideration is that Lambda workstations have 20 cores so more than that 
-#is for CHPC only.
-#2-16-22 unfortunately this workload may vary even between DLFS files so this will need
-#to be monitored.
+#Max mem size from nvidia-smi and divide accordingly with safety factor. 
 print("Before process spawning, total memory is:", psutil.virtual_memory().total / 1024 / 1024 / 1024, "available memory is:", (psutil.virtual_memory().available / 1024 / 1024 / 1024),flush=True)
 nanfill = 1
 #time_periods = '0123'
@@ -400,7 +344,6 @@ base_input_dir += '/'
 print('Using basedir',base_input_dir)
 input_dir = base_input_dir + str(threshold) + '/'
 
-#I'll keep the monthlys here although I don't intend to use them for a while if ever
 targetdf = pd.read_csv('../targets/cbcl_3year_targets_after_methods_tt.csv')
 base = pd.read_csv(input_dir + targ + '^baseline_tt_combined_DLFS.csv')
 sixM = pd.read_csv(input_dir + targ + '^6_month_tt_combined_DLFS.csv')
@@ -409,16 +352,6 @@ eighteenM = pd.read_csv(input_dir + targ + '^18_month_tt_combined_DLFS.csv')
 two = pd.read_csv(input_dir + targ + '^2_year_tt_combined_DLFS.csv')
 thirtyM = pd.read_csv(input_dir + targ + '^30_month_tt_combined_DLFS.csv')
 three = pd.read_csv(input_dir + targ + '^3_year_tt_combined_DLFS.csv')
-
-#This shouldn't be needed here because resample was changed but we'll be safe.
-bpm_cols_to_remove = ['abcd_yssbpm01_bpm_y_scr_totalprob_t', 'abcd_yssbpm01_bpm_y_scr_external_t', 'abcd_yssbpm01_bpm_y_scr_internal_t', 'abcd_yssbpm01_bpm_y_scr_attention_t']
-print(base.shape, one.shape, two.shape, three.shape)
-base = base.drop(bpm_cols_to_remove, axis=1, errors='ignore')
-one = one.drop(bpm_cols_to_remove, axis=1, errors='ignore')
-two = two.drop(bpm_cols_to_remove, axis=1, errors='ignore')
-three = three.drop(bpm_cols_to_remove, axis=1, errors='ignore')
-print(base.shape, one.shape, two.shape, three.shape)
-
 allDFs = [base, one, two, three]
 dfsWeWant = [ allDFs[i] for i in time_periods_list ] 
 
@@ -429,7 +362,6 @@ for i in range(len(dfsWeWant)):
       subsInAll = subsInAll.merge(dfsWeWant[i][['subjectkey']], how='inner',on='subjectkey')
 for i in range(len(dfsWeWant)):
    dfsWeWant[i] = subsInAll.merge(dfsWeWant[i], how='left', on='subjectkey')
-   #print("in subject merge loop",i,dfsWeWant[i].shape)
 for i in range(1,len(dfsWeWant)):
    otherDF = dfsWeWant[i]
    if dfsWeWant[0][['subjectkey']].compare(otherDF[['subjectkey']]).empty == False:
@@ -448,7 +380,6 @@ columnsByYear = {}
 all_cols_list = None
 for i in range(len(dfsWeWant)):
    columnsByYear[timelabels[i]] = dfsWeWant[i].columns.tolist()
-   #columnsByYear[timeperiods[i]].remove('eventname')
    if i == 0:
       all_cols_list = columnsByYear[timelabels[i]]
    else:
@@ -467,9 +398,8 @@ for k,v in countAllCols.items():
       timeseries.append(k)
       
 unique_columns = np.unique(all_cols_list) #NOTE this still has subjectkey which we will want to remove at the verrrry end.
-print("Hopefully uniques(one time only) + timeseries = num_unique_columns",  len(uniques), len(timeseries), len(unique_columns) )
+print("uniques(one time only) + timeseries = num_unique_columns",  len(uniques), len(timeseries), len(unique_columns) )
 print(dfsWeWant[0].shape[0])
-#subject list sanity check
 for i in range(len(dfsWeWant)):
    if dfsWeWant[0]['subjectkey'].equals(dfsWeWant[i]['subjectkey']) == False:
       print("subjectkey mismatch in final_array assembly. Exiting.")
@@ -485,8 +415,7 @@ coef_lookup = dict.fromkeys(unique_columns, [])
 print('Final_array shape',dfsWeWant[0].shape[0], len(dfsWeWant), num_unique_columns)
 X = np.empty((dfsWeWant[0].shape[0], len(dfsWeWant), num_unique_columns))
 X[:] = nanfill #our masking value we will experiment with 
-for timep in range(len(dfsWeWant)): 
-   #final_array[:,timep,:] = dfsWeWant[timep][unique_columns].to_numpy()      
+for timep in range(len(dfsWeWant)):     
    for col in dfsWeWant[timep].columns:
       if col in ['subjectkey', 'eventname']:
          continue
@@ -501,8 +430,7 @@ for timep in range(len(dfsWeWant)):
       X[:, timep, bigindex] = dfsWeWant[timep][col].to_numpy()
       runningColIndexes[bigindex] += 1
       coef_lookup[col].append(timelabels[timep])  
-
-#class_target_list = [ target ] 
+     
 # SET PARAMETERS for ga
 sol_per_pop = spp
 num_generations = numGens
@@ -526,8 +454,6 @@ while numFeatures != current_features:  #current_features >= numFeatures - 1
    names_list = []
    for col in thresh_features:
         ser = thresh_features[col]  #ser is a Series
-        #I am thinking this extra handling is due to version changes
-        #print(type(ser), ser, type(ser.values[0]) )
         if 'Index' in str(type(ser.values[0])):
            names = ser.values[0].unique()
         else:
@@ -537,18 +463,13 @@ while numFeatures != current_features:  #current_features >= numFeatures - 1
    warm_start_features = pd.Series(data=names_list).dropna()
    warm_start_features = warm_start_features.unique()
    warm_start_features = warm_start_features.tolist()
-   #A range of threshold values will actually work, want to try taking
-   #midpoint of range instead of the first one that works.
    current_features = len(warm_start_features)
    if current_features == numFeatures and begin_desired_range == 0:
        begin_desired_range = threshold_warm_start
    if current_features < numFeatures : #loop about to exit, take step back
        end_desired_range = threshold_warm_start - 0.0005
    print("Threshold_warm_start",threshold_warm_start,"Number of features is:",len(warm_start_features), flush=True)   
-
 print("features are", warm_start_features)
-#threshold_warm_start = (begin_desired_range + end_desired_range) / 2
-#print("After midpoint computing, threshold_warm_start=",threshold_warm_start)
 
 #Big difference between this and other version is feature/importances are the driver here.
 #Need to make a dictionary of features and their important time periods to refer to later.
@@ -562,14 +483,11 @@ for fi in range(len(warm_start_features)):
       featuresTPs_dict[root_feature_name].append(tpIwant)
 print(featuresTPs_dict)
 
-#learn_train_warm_start = learn_train[warm_start_features]
 fi = []
-#I don't trust dict.keys() to maintain ordering.
 final_col_names = []
 for col in featuresTPs_dict.keys():  #warm_start_features:
     final_col_names.append(col)
     fi.append(unique_columns.index(col))
-    print("Building learn_train_warm_start, appending",unique_columns.index(col),"which should range from 0 to X.shape[2] which is ",X.shape[2])
 learn_train_warm_start = np.take(X, fi, axis=2)
 features_pop = final_col_names #warm_start_features # learn_train_warm_start.columns.to_list()
 
@@ -577,8 +495,7 @@ features_pop = final_col_names #warm_start_features # learn_train_warm_start.col
 if len(fi) != len(final_col_names):
    print('feature count mismatch. Exiting.')
    exit(1)
-#WE WILL VERIFY CORRECTNESS HERE because we need to be able to trace the new columns to old
-#indexes.
+#WE WILL VERIFY CORRECTNESS HERE because we need to be able to trace the new columns to old indexes.
 print(learn_train_warm_start.shape)
 for tp in range(learn_train_warm_start.shape[1]):
    for q in range(learn_train_warm_start.shape[2]):
@@ -587,10 +504,8 @@ for tp in range(learn_train_warm_start.shape[1]):
          print('col mismatch between X and learn_train_warm_start. Exiting.')
          exit(1)
 
-#we have some work to do here on learn_train_warm_start: have to fill importances under
-#threshold with nan
-#experiment with learn_train_warm_start copy
-#NEED TO GET COLINDEXES TO MATCH UP, don't really have an index with which #col in learn_train_warm_start = which feature. How am I doing this later???
+#For learn_train_warm_start: have to fill importances under threshold with nan
+
 for tp in range(learn_train_warm_start.shape[1]):  
    for f in range(learn_train_warm_start.shape[2]): #THIS SHOULD BE same length as learn_train.shape[2]
       if tp not in featuresTPs_dict[final_col_names[f]]:
@@ -608,13 +523,9 @@ for col in importances:
 df_import = pd.DataFrame(data=import_list)
 threshold_recursive = df_import.std() * SD #where SD is user supplied param of 0,2,4,etc.
 threshold_recursive = threshold_recursive.tolist()[0]
-#Manually trying out low values
-#threshold_recursive = threshold_recursive / 2.0
 
 print("threshold_recursive",type(threshold_recursive),threshold_recursive)
-#for target in class_target_list:  
 X = learn_train_warm_start  #should be OK to redefine X here since we never use it again and this is before forking
-
 print("Right before fork, X is ",X,flush=True)
 
 balance_pct = y[y == 1]
@@ -661,9 +572,8 @@ if __name__ == '__main__':
       #on but ONLY THE FIRST TIME. We are not allowed to change it once process has 
       #started and we want to keep everything in the same queue for efficiency. As 
       #long as we balance out the queue at the beginning, we really don't care which
-      #GPU it runs on. Hopefully below will be clear, we send in real GPUNum code
-      #the first time the function runs and then 99 as a flag to never set it again.
-      #gpuNum should range from 0 to numOfGPUs
+      #GPU it runs on. We send in real GPUNum code the first time the function runs 
+      #and then 99 as a flag to never set it again. gpuNum should range from 0 to numOfGPUs
       if overallCounter < QUEUE_SIZE:
          gpuNum = (int  (  (int(overallCounter) / int(QUEUE_SIZE / numOfGPUs)  ) ))
       else:
@@ -687,12 +597,10 @@ if __name__ == '__main__':
         featureTP_list.append(features_TPs)
         feature_importances_TP_list.append(feature_TPs_flatten)          
         lock.release()
-        #mse_scores.append(mean_mse)
-      #Very sneaky problem here, we also need to start next job running after collecting all results
+      #We also need to start next job running after collecting all results
       inputQueue.put( (rand,learning,beta_1, beta_2, 1, 99, recursive_features) )  #Cheating on gpuNum here, all procs should have their gpuNum already 
       counter = 1
-      #overallCounter's job is done here, don't need to do anything with it here 
- #have to collect stragflers for when workload not evenly divisible by QUEUE_SIZE
+ #have to collect stragglers for when workload not evenly divisible by QUEUE_SIZE
  print("Collecting stragglers: ", counter)
  for i in range(counter):
     (features, mean_fitness, feature_importances_scores_mean, num_features,mean_accuracy,dummy3,dummy4, dummy5,dummy6,l,b1, b2, mean_tps, features_TPs, feature_TPs_flatten) = outputQueue.get()
@@ -709,7 +617,7 @@ if __name__ == '__main__':
     featureTP_list.append(features_TPs)
     feature_importances_TP_list.append(feature_TPs_flatten)     
     lock.release()
-    #mse_scores.append(mean_mse)
+   
  learning_pop = np.copy(learning_rates)
  beta_1_pop = np.copy(beta_1_list)
  beta_2_pop = np.copy(beta_2_list) 
@@ -752,7 +660,6 @@ if __name__ == '__main__':
  mean_std_list = []
  std_mean_list = []
  percentError_list = []
- print("How are things?")
 
  #initialize recursive loop
  g = 1
@@ -763,26 +670,16 @@ if __name__ == '__main__':
     df_importances = df_importances.astype('float64').fillna(0)
     df_features=pd.DataFrame(data=ann_features_TP).T  #(data=ann_features).T
     #threshold coef
-    print(threshold_recursive,"df_importances",df_importances)
-    print("df_features",df_features)
     bool_mask_importances = (df_importances > threshold_recursive) | (df_importances < - threshold_recursive)
-    print("bool_mask_importances", bool_mask_importances)
     thresh_features = df_features[bool_mask_importances]
     #get list of recursive features at threshold
     names_list = []
-    print("thresh_features",type(thresh_features),thresh_features)
-    
-    #HAVE TO DO SAME ROOT FEATURE THING HERE AS BEFORE SINCE NOW we're using TP/feature importances but we need a feature only list at end.
-    #print("DF_FEATURES",df_features)
-    #print("THRESH_FEATURES", thresh_features)
-    #print("DF_IMPORTANCES", df_importances)
-    #HYPOTHESIS - df_features and importances will have features for all time periods. We want recursive_features to be:
-    #features that are over/under threshold at any timepoint. So e.g. thresh_features would include p_ss_does_TP3 but for thresh_features we 
-    #just want the root name.
+
+    #Have to do same root feature thing as before since now we're using TP/feature importances but we need a feature only list at end.
+    #We want recursive_features to be features that are over/under threshold at any timepoint. 
+    #So e.g. thresh_features would include p_ss_does_TP3 but for thresh_features we just want the root name.
     for col in thresh_features:
         ser = thresh_features[col]  #ser is a Series
-        #I am thinking this extra handling is due to version changes
-        print(type(ser), ser, type(ser.values[0]) )
         if 'Index' in str(type(ser.values[0])):
            names = ser.values[0].unique()
         else:
@@ -795,7 +692,6 @@ if __name__ == '__main__':
       if name is not None and str(name) != 'nan': #nan detection is a lot more complex than it ought to be but this works
          name_root_list.append(name[:-4])
     name_root_list = np.unique(name_root_list)
-    #recursive_features = pd.Series(data=names_list).dropna()
     recursive_features = pd.Series(data=name_root_list).dropna()
     recursive_features = recursive_features.unique()
     recursive_features = recursive_features.tolist()
@@ -991,7 +887,7 @@ if __name__ == '__main__':
                   parallel_b2_pop.append(b2)
                   #tps_list.append(mean_tps)
                   lock.release()
-               #Very sneaky problem here, we also need to start next job running after collecting all results
+               #We also need to start next job running after collecting all results
                inputQueue.put( (rand,learning,beta_1, beta_2, 2, 99, recursive_features) )  #Cheating on gpuNum here, this is first in the queue so will always be 0
                counter = 1
    #NEED TO COLLECT STRAGGLERS IN CASE WORKLOAD WAS NOT EVENLY DIVISIBLE BY QUEUE_SIZE
@@ -1046,11 +942,11 @@ if __name__ == '__main__':
        best_featureTP_list = best_featureTP_list + best_features_TPs       
        best_num_features = [num_features_list[i] for i in best_fitness_idx]
        best_num_feature_list = best_num_feature_list + best_num_features
-       #NOW IT's TIME to do feature importances
+
        if len(feature_importances_list) > 0:
          print("ERROR - feature_importances_list at this point should be 0")
          exit(1)
-       print("STARTING NEW FEATURE IMPORTANCE GENERATION, best features are", best_features)    
+       print("Starting new feature importance generation, best features are", best_features)    
        #This is done this way because we know we want 3 (the top 3). I want a list but I want the indexes to already exist.  
        accuracy_list = [0,1,2]
        precision_list = [0,1,2]
@@ -1063,8 +959,8 @@ if __name__ == '__main__':
        tps_list = [0,1,2]
        for i in range(3):
           #we want to re-create model here as it was found to be best. A little trickier than usual cases
-          #because we want to train model with the features it was trained with before and so we have to rig
-          #random selection. So we send best_features and len(best_features) to ensure all are selected.
+          #because we want to train model with the features it was trained with before and so we have to preset
+          #"random" selection. So we send best_features and len(best_features) to ensure all are selected.
           inputQueue.put( (len(best_features[i]),best_learning[i],best_beta_1[i], best_beta_2[i], 3, 99, best_features[i]) ) 
        for i in range(3):
           (features, mean_fitness, feature_importances_scores_mean, num_features, mean_accuracy, mean_precision,mean_recall, mean_f1, mean_auc,l,b1, b2, mean_tps, features_TPs, feature_TPs_flatten) = outputQueue.get()      
@@ -1210,24 +1106,6 @@ if __name__ == '__main__':
     #print("recursive_best_numfeature_list.shape",len(recursive_best_num_feature_list))
     #print("recursive_best_generation_list.shape",len(recursive_best_generation_list))
 
-    #Save in progress results
-    '''
-    in_progress_model_stack = np.stack((recursive_best_fitness_list, recursive_best_learning_list, recursive_best_beta_1_list, recursive_best_beta_2_list, recursive_best_accuracy_list, recursive_best_precision_list, recursive_best_recall_list, recursive_best_f1_list, recursive_best_auc_list, recursive_best_num_feature_list, recursive_best_generation_list, recursive_best_tps_list), axis=1)
-    in_progress_models = pd.DataFrame(data=in_progress_model_stack, columns = ['fitness', 'learning', 'beta_1', 'beta_2', 'accuracy', 'precision', 'recall', 'f1', 'auc', 'num_features', 'generation', 'TP_importances'])
-    in_progress_features.to_csv(features_filename.replace('.csv','') + "g_" + str(g) + ".csv")
-    in_progress_importances.to_csv(importances_filename.replace('.csv','') + "g_" + str(g) + ".csv")
-    in_progress_models.to_csv(models_filename.replace('.csv','') + "g_" + str(g) + ".csv")
-    np.save(basepath + 'learning_pop.npy', learning_pop)
-    np.save(basepath + 'beta_1_pop.npy', beta_1_pop)
-    np.save(basepath + 'beta_2_pop.npy', beta_2_pop)
-    np.save(basepath + 'queue.npy', queue)
-    np.save(basepath + 'ann_fitness.npy',ann_fitness)
-    np.save(basepath + 'ann_features.npy',ann_features)
-    st0 = np.random.get_state()
-    randfile = open(basepath + 'random_state.pkl', 'wb') 
-    pickle.dump(st0, randfile)
-    randfile.close()    
-    '''
     g += 1
     #gc.collect()
    #print("Used memory after gc is now: " + str(psutil.virtual_memory().used / 1000 / 1000 / 1000) + "GB", flush=True)
