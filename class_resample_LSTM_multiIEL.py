@@ -45,18 +45,13 @@ if weighted != "True" and weighted != "False":
 if QUEUE_SIZE > len(os.sched_getaffinity(0)):
     print("More cores requested than are avaialble. Exiting.")
     exit(1)
+   
+layer_size = 300 
+spp = 100 
+numGens = 401 
+optoption = 'AdamW'
 
-optionfile = open("resample_options.txt", "r")
-layer_size = int(optionfile.readline().rstrip())
-spp = int(optionfile.readline().rstrip()) #sol_per_pop
-numGens = int(optionfile.readline().rstrip()) #num_generations
-optoption = optionfile.readline().rstrip()
-if optoption not in ['Adam','Adamax','Nadam', 'AdamW', 'RMSprop']:
-  print("Optimizer in option file not supported - must be either Adam, Adamax, or Nadam")
-  exit(1)
-
-#I want to set output paths here now even though they're not used until the end
-#create filepaths
+#create filepaths for output
 basepath = "IEL_ann_resample_" + time_periods
 if weighted == "True":
    basepath += '_weightedavg'
@@ -83,8 +78,7 @@ importances_path = fname + '_' + optoption + "_TPimportances"
 full_importances_path = os.path.join(basepath,importances_path)
 importances_TP_filename = full_importances_path + '.csv'
 
-
-# SET PARAMETERS for ga
+# SET PARAMETERS for genetic algorithm
 sol_per_pop = spp
 num_generations = numGens
 FIFO_len = 30
@@ -93,20 +87,17 @@ num_parents_mating = 40
 num_parents_mut = 20
 num_parents_rand = int(sol_per_pop - (num_parents_mating/2 + num_parents_mut))
 queue_len = num_parents_mating + num_parents_mut
-#NEXT 4 linrd str new
 
-learning_min =np.float64(optionfile.readline().rstrip())
-learning_max =np.float64(optionfile.readline().rstrip())
-beta_1_min = np.float64(optionfile.readline().rstrip())
-beta_1_max = np.float64(optionfile.readline().rstrip())
-beta_2_min = np.float64(optionfile.readline().rstrip())
-beta_2_max = np.float64(optionfile.readline().rstrip())  
-optionfile.close()
+learning_min = 0.00001
+learning_max = 0.01
+beta_1_min = 0.9
+beta_1_max = 0.999
+beta_2_min = 0.9
+beta_2_max = 0.999
 
 def parallel_func(iq, outq):
-      #NOTE NOTE NOTE imports are done here because of an odd CUDA limitation that prevents
-      #forked multiprocesses from getting another CUDA context. It may turn out that
-      #getting this CUDA context every time may be time consuming.
+      #Imports are done here because of an odd CUDA limitation that prevents
+      #forked multiprocesses from getting another CUDA context. 
    for rand,learning,beta_1, beta_2, partNum, gpuNum in iter(iq.get,'STOP'):
       os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
       import tensorflow as tf
@@ -115,16 +106,9 @@ def parallel_func(iq, outq):
       from tensorflow.keras.layers import Dense, LSTM, Bidirectional
       from tensorflow.keras.models import Sequential
       import tensorflow_addons as tfa
-      #tf.compat.v1.disable_v2_behavior() 
-      #tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-      tf.get_logger().setLevel('ERROR')
-      #from absl import logging
-      #logging.set_verbosity(logging.ERROR)      
+      tf.get_logger().setLevel('ERROR')   
       import logging
       logging.disable(logging.WARNING)
-      #next 2 lines are if we want DeepExplainer to work
-      #import tensorflow.keras.backend as K 
-      #tf.compat.v1.disable_eager_execution()
 
       tf.config.threading.set_inter_op_parallelism_threads(1)
       tf.config.threading.set_intra_op_parallelism_threads(1) 
@@ -133,14 +117,6 @@ def parallel_func(iq, outq):
          physical_devices = tf.config.list_physical_devices('GPU')
          tf.config.set_visible_devices(physical_devices[gpuNum], 'GPU')
          tf.config.experimental.set_memory_growth(physical_devices[gpuNum], True) 
-         #tf.config.set_logical_device_configuration(physical_devices[gpuNum], [tf.config.LogicalDeviceConfiguration(memory_limit=2000)])
-         #config = tf.compat.v1.ConfigProto(gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.1))
-         #config.gpu_options.allow_growth = True
-         #session = tf.compat.v1.Session(config=config)
-         #tf.compat.v1.keras.backend.set_session(session)
-
-
-      #print("Sanity check isnide function X", X,"more sanity check, type(partnum) is ",type(partNum), flush=True)
 
       #NOTE in part 2 case, rand is really feature
       features = []
@@ -152,15 +128,10 @@ def parallel_func(iq, outq):
          indexeses = rng.choice(range(0,X.shape[2]), size=rand, replace=False)  
          for indx in indexeses:
             features.append(unique_columns[indx])
-         #X_sample = X.sample(n=rand, axis=1) #original code
-         #RED ALERT - the dataframe sample that I am supposed to be duplicating here is WITHOUT REPLACEMENT which makes sense
-         #k = 3
       else:
          for col in rand:
             indexeses.append(unique_columns.index(col))
          features = rand
-         #X_sample = X[rand] #original code
-         #k = 3
          
       #New part making a new features list for TP/features.         
       features_TPs = []
@@ -172,12 +143,8 @@ def parallel_func(iq, outq):
       if 'Series' in str(type(X_sample)):
          print("X_sample is series,not df. Partnum,rand",partNum,rand)   
          exit(1)
-      #features = X_sample.columns  
       num_features = len(features)
       np.warnings.filterwarnings('error', category=np.VisibleDeprecationWarning)
-      #print("double checking sampling, before/after", X.shape, X_sample.shape)
-      #X_sample = np.asarray(X_sample).astype(np.float32)
-      #print(type(X_sample), len(X_sample))
       k = np.floor(len(X_sample)/len(features)).astype('int64')
       k = np.where(k>10, 10, k).astype('int64').item()
       k = np.where(k > (np.sum(y == 1)/k), np.floor(np.sum(y == 1)/k), k).astype('int64').item()
@@ -202,8 +169,7 @@ def parallel_func(iq, outq):
          X_test = np.take(X_sample, test, axis=0)
          #print("X_train and test shapes",type(X_train), type(X_test),X_train.shape, X_test.shape)
          y_train = tf.keras.utils.to_categorical(y[train], num_classes=2)  
-         y_test = tf.keras.utils.to_categorical(y[test], num_classes=2)
-         #print("y_train and test shapes",type(y_train),y_train.shape, y_test.shape)         
+         y_test = tf.keras.utils.to_categorical(y[test], num_classes=2)       
          model = Sequential()
          #NOTE: tanh activation function runs way faster because CUDnn is optimized for it.
          model.add(Bidirectional(LSTM(layer_size, activation='tanh', return_sequences=True))) #,input_shape=(final_array.shape[1], final_array.shape[2])))) #
@@ -234,16 +200,8 @@ def parallel_func(iq, outq):
  
          model.compile(loss="categorical_crossentropy", optimizer = opt, metrics=['accuracy'])
          early_stopping_monitor = EarlyStopping(monitor='val_loss',patience=3)
-         #NOTE I used this early_stopping in my v0.1
-         #early_stopping_monitor = EarlyStopping(min_delta = 0.01, monitor='loss',patience=10)
-      #Tensorboard quackeries
-      #log_dir = "TBLogs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-      #tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1, profile_batch=(1,5))
-         #print('before fit', flush=True)
          model.fit(X_train,y_train, epochs=200, validation_data = (X_test, y_test), callbacks=[early_stopping_monitor], verbose=0) 
-         #print("Before predict")
          y_predict = np.argmax(model.predict(X_test), axis=-1)  #model.predict(X_test)
-         #print("AFter prediction")
          #INLINING BIC_pop_fitness here
          resid = y[test] - y_predict
          sse = sum(resid**2)
@@ -257,22 +215,14 @@ def parallel_func(iq, outq):
                fitness = (sample_size * np.log( 0.3 / sample_size)) + (num_params * np.log(sample_size)) 
          fitness_scores.append(fitness)
          
-         #WE ONLY DO FEATURE IMPORTANCES FOR PART 3 now
+         #Feature importances for Part 3 only due to time it takes to compute them.
          if partNum == 3:
-            #Shap's DeepExplainer still has not been fixed to work with TF v2.x
-            #shap.explainers._deep.deep_tf.op_handlers['Split'] = passthrough
-            #shap.explainers._deep.deep_tf.op_handlers['AddV2'] = shap.explainers._deep.deep_tf.passthrough
-            #SO WE HAVE TO USE GradientExplainer if we want to use TF 2.x and be parallel
             ge = shap.GradientExplainer( model, X_train)
             shap_values = ge.shap_values(X_test)
-            #de = shap.DeepExplainer( model, X_train)
-            #shap_values = de.shap_values(X_test, check_additivity=True)
             if isinstance(shap_values, list):
                if len (shap_values) != 2:
                  print('shap_values list should be == numClasses', flush=True)
                  exit(1)
-            #   else:
-            #     print('right after DE shap values call, length of list is 2 and [1] shape is ', shap_values[1].shape, flush=True) 
             else:
                print('SHAP_values is NOT a list. Exiting.',flush=True)
                exit(1)
@@ -298,8 +248,7 @@ def parallel_func(iq, outq):
                   feature_importances = np.average(feature_importances, axis=0, weights = tp_importances)
             #END OF WEIGHTED AVG SECTION
             feature_importances_scores.append(feature_importances)
-            
-         #NOTE: in previous project, mean_mse was only used in part 2. 
+             
          accuracy = accuracy_score(y[test], y_predict)
          accuracy_scores.append(accuracy)
          if partNum == 2 or partNum == 3:
@@ -324,11 +273,7 @@ def parallel_func(iq, outq):
          for column in feature_importances_scores_folds:
             col_mean = feature_importances_scores_folds[column].mean()
             feature_importances_scores_mean.append(col_mean)      
-         #print("Old honk things we return", feature_importances_scores_mean)
-         #print("HONK", len(feature_importances_scores_withTPs),feature_importances_scores_withTPs)
          feature_importances_scores_withTPs_mean = np.mean(feature_importances_scores_withTPs, axis=0)
-         #print("Honk honk should be num_TP x num_features", feature_importances_scores_withTPs_mean)
-         #IT IS!!!!! But we need to flatten it? Or do we?
          features_TPs_flatten = []
          countercheck = 0
          for f in range(len(features)):
@@ -337,8 +282,7 @@ def parallel_func(iq, outq):
                if features[f] not in features_TPs[countercheck]:
                   print('feature name mismatch')
                features_TPs_flatten.append(feature_importances_scores_withTPs_mean[t, f ])
-               countercheck += 1
-         #print('return this?',features_TPs_flatten)                      
+               countercheck += 1                   
       else:
          feature_importances_scores_mean = [0 for i in range(num_features)]
          mean_tps = [0 for i in range(num_features)]
@@ -381,15 +325,6 @@ eighteenM = pd.read_csv(input_dir + targ + '^18_month_tt_combined_DLFS.csv')
 two = pd.read_csv(input_dir + targ + '^2_year_tt_combined_DLFS.csv')
 thirtyM = pd.read_csv(input_dir + targ + '^30_month_tt_combined_DLFS.csv')
 three = pd.read_csv(input_dir + targ + '^3_year_tt_combined_DLFS.csv')
-
-bpm_cols_to_remove = ['abcd_yssbpm01_bpm_y_scr_totalprob_t', 'abcd_yssbpm01_bpm_y_scr_external_t', 'abcd_yssbpm01_bpm_y_scr_internal_t', 'abcd_yssbpm01_bpm_y_scr_attention_t']
-print(base.shape, one.shape, two.shape, three.shape)
-base = base.drop(bpm_cols_to_remove, axis=1, errors='ignore')
-one = one.drop(bpm_cols_to_remove, axis=1, errors='ignore')
-two = two.drop(bpm_cols_to_remove, axis=1, errors='ignore')
-three = three.drop(bpm_cols_to_remove, axis=1, errors='ignore')
-print(base.shape, one.shape, two.shape, three.shape)
-
 allDFs = [base, one, two, three]
 dfsWeWant = [ allDFs[i] for i in time_periods_list ] 
 
@@ -400,7 +335,6 @@ for i in range(len(dfsWeWant)):
       subsInAll = subsInAll.merge(dfsWeWant[i][['subjectkey']], how='inner',on='subjectkey')
 for i in range(len(dfsWeWant)):
    dfsWeWant[i] = subsInAll.merge(dfsWeWant[i], how='left', on='subjectkey')
-   #print("in subject merge loop",i,dfsWeWant[i].shape)
 for i in range(1,len(dfsWeWant)):
    otherDF = dfsWeWant[i]
    if dfsWeWant[0][['subjectkey']].compare(otherDF[['subjectkey']]).empty == False:
@@ -439,9 +373,6 @@ for k,v in countAllCols.items():
       timeseries.append(k)
       
 unique_columns = np.unique(all_cols_list) #NOTE this still has subjectkey which we will want to remove at the verrrry end.
-print("Hopefully uniques(one time only) + timeseries = num_unique_columns",  len(uniques), len(timeseries), len(unique_columns) )
-print(dfsWeWant[0].shape[0])
-#subject list sanity check
 for i in range(len(dfsWeWant)):
    if dfsWeWant[0]['subjectkey'].equals(dfsWeWant[i]['subjectkey']) == False:
       print("subjectkey mismatch in final_array assembly. Exiting.")
@@ -523,12 +454,10 @@ if __name__ == '__main__':
          gpuNum = (int  (  (int(overallCounter) / int(QUEUE_SIZE / numOfGPUs)  ) ))
       else:
          gpuNum = 99
-      #print("sending count",counter,flush=True)
       inputQueue.put( (rand,learning,beta_1, beta_2, 1, gpuNum) )
       counter += 1
       overallCounter += 1
     else: #Collect results, NOTE LAST 2 output params are blank and not used here
-      #print("starting receive loop",counter,flush=True)
       for i in range(QUEUE_SIZE):
         (features, mean_fitness, feature_importances_scores_mean, num_features,mean_accuracy,dummy3,dummy4,dummy5,dummy6,l,b1, b2, mean_tps, features_TPs, feature_TPs_flatten) = outputQueue.get()
         lock.acquire()
@@ -548,7 +477,7 @@ if __name__ == '__main__':
       inputQueue.put( (rand,learning,beta_1, beta_2, 1, 99) )  #Cheating on gpuNum here, all procs should have their gpuNum already 
       counter = 1
       #overallCounter's job is done here, don't need to do anything with it here 
- #have to collect stragflers for when workload not evenly divisible by QUEUE_SIZE
+ #have to collect stragglers for when workload not evenly divisible by QUEUE_SIZE
  print("Collecting stragglers: ", counter)
  for i in range(counter):
     (features, mean_fitness, feature_importances_scores_mean, num_features,mean_accuracy,dummy3,dummy4,dummy5,dummy6,l,b1, b2, mean_tps, features_TPs, feature_TPs_flatten) = outputQueue.get()
@@ -756,7 +685,6 @@ if __name__ == '__main__':
    num_features_list = []
    tps_list = []
    counter = 0
-   print("Before feature loop",flush=True)
    total_loop_count = 0
    parallel_learning_pop = []
    parallel_b1_pop = []
@@ -818,7 +746,7 @@ if __name__ == '__main__':
    #we have an interesting problem with learning_pop and parallel_learning_pop, etc. here. We want these to carry over from part 1 to part 2.
    #But after one iteration, we need to resync aka we now need to call learning_pop, beta_1_pop, beta_2_pop their parallel counterparts.
    #But first let's verify that they are element-wise (NOT ORDER-wise matches)
-   #ALL OF THIS IS BECAUSE WE DO NOT GET RESULT BLOCKS IN THE ORDER THEY WERE SENT
+   #This is because we do not get results in the order they were sent
    if len(learning_pop) != len(parallel_learning_pop):
       print("Learning pop size mismatch")
       exit(1)
@@ -871,8 +799,7 @@ if __name__ == '__main__':
    #NOW IT's TIME to do feature importances
    if len(feature_importances_list) > 0:
       print("ERROR - feature_importances_list at this point should be 0")
-      exit(1)
-   print("STARTING NEW FEATURE IMPORTANCE GENERATION, best features are", best_features)    
+      exit(1)  
    #This is done this way because we know we want 3 (the top 3). I want a list but I want the indexes to already exist.  
    accuracy_list = [0,1,2]
    precision_list = [0,1,2]
