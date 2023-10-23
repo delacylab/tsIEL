@@ -190,7 +190,7 @@ for i in range(len(dfsWeWantTrain)):
    else:
       all_cols_list = all_cols_list + columnsByYearTrain[timelabels[i]]
       
-unique_columns_train = np.unique(all_cols_list) #NOTE this still has subjectkey which we will want to remove at the verrrry end.
+unique_columns_train = np.unique(all_cols_list) #NOTE this still has subjectkey which we will want to remove at the very end.
 print("Uniques(one time only) + timeseries = num_unique_columns",  len(uniques), len(timeseries), len(unique_columns) )
 print(dfsWeWantTrain[0].shape[0])
 #subject list sanity check
