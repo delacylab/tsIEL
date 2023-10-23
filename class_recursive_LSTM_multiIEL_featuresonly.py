@@ -43,19 +43,14 @@ parser.add_argument('tps',help='should look like 0123')
 args = parser.parse_args()
 
 optionfile = open("recursive_options.txt", "r")
-layer_size = int(optionfile.readline().rstrip())
-spp = int(optionfile.readline().rstrip()) #sol_per_pop
-numGens = int(optionfile.readline().rstrip()) #num_generations
-optoption = optionfile.readline().rstrip()
-if optoption not in ['Adam','Adamax','Nadam', 'AdamW']:
-  print("Optimizer in option file not supported - must be either Adam, Adamax, or Nadam")
-  exit(1)
-optionfile.close()
+layer_size = 300 
+spp = 100 
+numGens = 401 
+optoption = 'AdamW'
 
 def makeMSEOneOutputModel(iq, outq):
-      #NOTE NOTE NOTE imports are done here because of an odd CUDA limitation that prevents
-      #forked multiprocesses from getting another CUDA context. It may turn out that
-      #getting this CUDA context every time may be time consuming.
+      #Imports are done here because of an odd CUDA limitation that prevents
+      #forked multiprocesses from getting another CUDA context.
    for rand,learning,beta_1, beta_2, partNum, gpuNum, recursive_features in iter(iq.get,'STOP'):
       import tensorflow as tf
       from tensorflow.keras.optimizers import Adam, Adamax, Nadam
@@ -72,7 +67,6 @@ def makeMSEOneOutputModel(iq, outq):
          physical_devices = tf.config.list_physical_devices('GPU')
          tf.config.set_visible_devices(physical_devices[gpuNum], 'GPU')
          tf.config.experimental.set_memory_growth(physical_devices[gpuNum], True) 
-      #print("Sanity check isnide function X", X,"more sanity check, type(partnum) is ",type(partNum), flush=True)
 
       features = []
       indexeses = []
@@ -89,7 +83,7 @@ def makeMSEOneOutputModel(iq, outq):
          for indx in indexeses:
             features.append(warm_start_features[indx])
          #print('in func,features is ',features)
-      else: #      PART 2 - X_sample = X[recursive_features].sample(n=rand, axis=1)  #X[rand]
+      else: #      PART 2 - X_sample = X[recursive_features].sample(n=rand, axis=1) 
          rng = np.random.default_rng()
          if partNum == 3 and rand != len(recursive_features):
             print("In part 3,rand should = len(recursive_features). Exiting.")
@@ -110,14 +104,12 @@ def makeMSEOneOutputModel(iq, outq):
       #END ORIGINAL
       num_features = len(features)
       np.warnings.filterwarnings('error', category=np.VisibleDeprecationWarning)
-      #X_sample = np.asarray(X_sample).astype(np.float32)
       k = np.floor(len(X_sample)/len(features)).astype('int64')
       k = np.where(k>10, 10, k).astype('int64').item()
       k = np.where(k > (np.sum(y == 1)/k), np.floor(np.sum(y == 1)/k), k).astype('int64').item()
       k = np.where(k > (np.sum(y == 0)/k), np.floor(np.sum(y == 0)/k), k).astype('int64').item()
       k = np.where(k<2, 2, k).astype('int64').item()
       skf = StratifiedKFold(n_splits=k, random_state=42, shuffle=True)
-      #print('using k',k,flush=True) 
       fitness_scores = []
       feature_importances_scores = []        
       accuracy_scores = []
@@ -127,8 +119,6 @@ def makeMSEOneOutputModel(iq, outq):
       auc_scores = []
       tp_scores = []      
       for train,test in skf.split(X_sample, y): 
-         #X_train = X_sample[train]
-         #X_test = X_sample[test]
          X_train = np.take(X_sample, train, axis=0)
          X_test = np.take(X_sample, test, axis=0)         
          y_train = tf.keras.utils.to_categorical(y[train], num_classes=2)
@@ -144,8 +134,7 @@ def makeMSEOneOutputModel(iq, outq):
          elif optoption == 'Adamax':
            opt = Adamax(learning_rate = learning, beta_1=beta_1, beta_2=beta_2)
          elif optoption == 'AdamW':
-           #This will bear watching. AdamW requires a weight decay parameter. I took default below from website
-           #print("Using adamw")
+           # AdamW requires a weight decay parameter. I took default below from website
            step = tf.Variable(0, trainable=False)
            schedule = tf.optimizers.schedules.PiecewiseConstantDecay([10000, 15000], [1e-0, 1e-1, 1e-2])
            # lr and wd can be a function or a tensor
@@ -162,12 +151,9 @@ def makeMSEOneOutputModel(iq, outq):
             return accuracy_score(y, y_predict_classes)   
          model.compile(loss="categorical_crossentropy", optimizer = opt, metrics=['accuracy'])
          early_stopping_monitor = EarlyStopping(monitor='val_loss',patience=3)
-      #Tensorboard quackeries
-      #log_dir = "TBLogs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-      #tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1, profile_batch=(1,5))
          model.fit(X_train,y_train, epochs=200, validation_data = (X_test, y_test), callbacks=[early_stopping_monitor], verbose=0) #callback used to be early_stopping_monitor
          #Used to be keras had model.predict_classes which would give us nice looking predictions
-         #like [1,0] for the 2 output neurons. That was too easy to use and now model.predict will
+         #like [1,0] for the 2 output neurons. model.predict will
          #look like [0.9432, 0.0231]. For our accuracy metrics we need it to look like [1,0]
 
          #further note: below line is for networks with a softmax final layer 
@@ -176,7 +162,6 @@ def makeMSEOneOutputModel(iq, outq):
          resid = y[test] - y_predict_classes
          sse = sum(resid**2)
          sample_size = len(X_sample)
-         #print("So what is sample size anyway,should = numRows", sample_size, X_sample.shape[0])
          num_params = num_features
          #Below handles the sse=0 case
          with np.errstate(divide='raise'):
@@ -195,8 +180,6 @@ def makeMSEOneOutputModel(iq, outq):
                if len (shap_values) != 2:
                  print('shap_values list should be == numClasses', flush=True)
                  exit(1)
-            #   else:
-            #     print('right after DE shap values call, length of list is 2 and [1] shape is ', shap_values[1].shape, flush=True) 
             else:
                print('SHAP_values is NOT a list. Exiting.',flush=True)
                exit(1)
@@ -259,16 +242,6 @@ def makeMSEOneOutputModel(iq, outq):
          mean_auc = -999999.0
 
       outq.put( (features, mean_fitness, feature_importances_scores_mean, num_features, mean_accuracy, mean_precision,mean_recall, mean_f1, mean_auc,learning,beta_1, beta_2, mean_tps) )
-#      del X
-#      del y
-#      gc.collect()
-
-#tf.debugging.set_log_device_placement(True)
-#mirrored_strategy = tf.distribute.MirroredStrategy(devices=GPUsToUse) 
-
-#Thresholds go here which will vary by project
-#threshold_warm_start = np.float64(0.028)  #(0.0455)
-#threshold_recursive = 0.06425 #0.08173
 
 prog_start_time = time.time()
 targ = args.target
@@ -296,16 +269,12 @@ if QUEUE_SIZE > len(os.sched_getaffinity(0)):
 #BEGINNING OF recursion code to bring in previous results
 #INPUT PATHS HERE - get results of prior trained models from resample
 #stored in dirs like IEL_ann_resample/phenotypic/anx_pres/
-#NOTE: First column dropped in the input files is an index column and has
-#been verified to still be there even with all my changes so we will keep it.
-#input_basepath = 'IEL_ann_resample/' + fname + os.path.sep + fname + '_' + optoption
 input_basepath = "IEL_ann_resample_" + time_periods
 if weighted == "True":
    input_basepath += '_weightedavg'
 input_basepath += os.path.sep + fname + os.path.sep + fname + '_' + optoption
 
 #filenames are like phenotypic_anx_pres_Adam_models.csv
-#parameters_filename = parameters_basepath + target + '.csv'
 parameters_filename = input_basepath + '_models.csv'
 parameters = pd.read_csv(parameters_filename)
 parameters = parameters.drop(parameters.columns[0], axis=1)
@@ -326,12 +295,7 @@ importances_filename = input_basepath + "_importances.csv"
 importances = pd.read_csv(importances_filename)
 importances = importances.drop(importances.columns[0], axis=1)
 #END OF INPUT GETTING FROM PREVIOUS STAGE
-
-#BEGIN of OUTPUT PATH SETTING
-#Not gret that we're reusing variable names here for input files and
-#output files but since we have features, importances, models at this point
-#we shoould be good
-
+#Now to set output paths
 basepath = "IEL_ann_recursive_" + time_periods + os.path.sep + fname + os.path.sep + str(SD) + "SD" + os.path.sep
 os.makedirs(basepath) #exist_ok=True is a param I could use but I don't think I want to.
 features_path = fname + '_' + optoption + "_features_" + str(SD) + "SD"
@@ -343,20 +307,9 @@ models_filename = full_models_path + '.csv'
 importances_path = fname + '_' + optoption + "_importances" + str(SD) + "SD"
 full_importances_path = os.path.join(basepath,importances_path)
 importances_filename = full_importances_path + '.csv'
-#END OF OUTPUT PATH SETTING
-
-
-#END OF recursion code to bring in previous results
+#END OF code to bring in previous results
 print("Running " + targ + " with this many GPUs: " + str(numOfGPUs) + " and total # of cores is " + str(QUEUE_SIZE), flush=True)
 #becuase we need the GPU (mem size of 32 * numOfGPUs) < GPU_Max_Mem_Size (e.g. 40GB)
-#Ideally we would know mem size of one process run in advance and then we could get GPU
-#Max mem size from nvidia-smi and divide accordingly with safety factor. But it's like
-# you would need to know the number before you would know it, unless there is a way to
-#convert matrix input size to size taken on GPU in advance.
-#ANOTHER consideration is that Lambda workstations have 20 cores so more than that 
-#is for CHPC only.
-#2-16-22 unfortunately this workload may vary even between DLFS files so this will need
-#to be monitored.
 print("Before process spawning, total memory is:", psutil.virtual_memory().total / 1024 / 1024 / 1024, "available memory is:", (psutil.virtual_memory().available / 1024 / 1024 / 1024),flush=True)
 nanfill = 1
 #time_periods = '0123'
@@ -371,7 +324,6 @@ base_input_dir += '/'
 print('Using basedir',base_input_dir)
 input_dir = base_input_dir + str(threshold) + '/'
 
-#I'll keep the monthlys here although I don't intend to use them for a while if ever
 targetdf = pd.read_csv('../targets/cbcl_3year_targets_after_methods_tt.csv')
 base = pd.read_csv(input_dir + targ + '^baseline_tt_combined_DLFS.csv')
 sixM = pd.read_csv(input_dir + targ + '^6_month_tt_combined_DLFS.csv')
@@ -380,15 +332,6 @@ eighteenM = pd.read_csv(input_dir + targ + '^18_month_tt_combined_DLFS.csv')
 two = pd.read_csv(input_dir + targ + '^2_year_tt_combined_DLFS.csv')
 thirtyM = pd.read_csv(input_dir + targ + '^30_month_tt_combined_DLFS.csv')
 three = pd.read_csv(input_dir + targ + '^3_year_tt_combined_DLFS.csv')
-
-#This shouldn't be needed here because resample was changed but we'll be safe.
-bpm_cols_to_remove = ['abcd_yssbpm01_bpm_y_scr_totalprob_t', 'abcd_yssbpm01_bpm_y_scr_external_t', 'abcd_yssbpm01_bpm_y_scr_internal_t', 'abcd_yssbpm01_bpm_y_scr_attention_t']
-print(base.shape, one.shape, two.shape, three.shape)
-base = base.drop(bpm_cols_to_remove, axis=1, errors='ignore')
-one = one.drop(bpm_cols_to_remove, axis=1, errors='ignore')
-two = two.drop(bpm_cols_to_remove, axis=1, errors='ignore')
-three = three.drop(bpm_cols_to_remove, axis=1, errors='ignore')
-print(base.shape, one.shape, two.shape, three.shape)
 
 allDFs = [base, one, two, three]
 dfsWeWant = [ allDFs[i] for i in time_periods_list ] 
@@ -400,7 +343,6 @@ for i in range(len(dfsWeWant)):
       subsInAll = subsInAll.merge(dfsWeWant[i][['subjectkey']], how='inner',on='subjectkey')
 for i in range(len(dfsWeWant)):
    dfsWeWant[i] = subsInAll.merge(dfsWeWant[i], how='left', on='subjectkey')
-   #print("in subject merge loop",i,dfsWeWant[i].shape)
 for i in range(1,len(dfsWeWant)):
    otherDF = dfsWeWant[i]
    if dfsWeWant[0][['subjectkey']].compare(otherDF[['subjectkey']]).empty == False:
@@ -438,9 +380,6 @@ for k,v in countAllCols.items():
       timeseries.append(k)
       
 unique_columns = np.unique(all_cols_list) #NOTE this still has subjectkey which we will want to remove at the verrrry end.
-print("Hopefully uniques(one time only) + timeseries = num_unique_columns",  len(uniques), len(timeseries), len(unique_columns) )
-print(dfsWeWant[0].shape[0])
-#subject list sanity check
 for i in range(len(dfsWeWant)):
    if dfsWeWant[0]['subjectkey'].equals(dfsWeWant[i]['subjectkey']) == False:
       print("subjectkey mismatch in final_array assembly. Exiting.")
@@ -456,25 +395,19 @@ coef_lookup = dict.fromkeys(unique_columns, [])
 print('Final_array shape',dfsWeWant[0].shape[0], len(dfsWeWant), num_unique_columns)
 X = np.empty((dfsWeWant[0].shape[0], len(dfsWeWant), num_unique_columns))
 X[:] = nanfill #our masking value we will experiment with 
-for timep in range(len(dfsWeWant)): 
-   #final_array[:,timep,:] = dfsWeWant[timep][unique_columns].to_numpy()      
+for timep in range(len(dfsWeWant)):   
    for col in dfsWeWant[timep].columns:
       if col in ['subjectkey', 'eventname']:
          continue
       #need to get index of this in unique_columns
       bigindex = unique_columns.index(col)
-      #The following commented line would create a matrix stacked to fill the early time periods.
-      #where even a column only appearing at 2 year would be pushed into the baseline time period
-      #so occurences rather than actual time period
-      #final_array[:, runningColIndexes[bigindex] ,bigindex] = dfsWeWant[timep][col].to_numpy()
       #THE BELOW LINE WILL COPY data where its time period should be. 
       #So 2 year variables will only appear in twoyear time period.
       X[:, timep, bigindex] = dfsWeWant[timep][col].to_numpy()
       runningColIndexes[bigindex] += 1
       coef_lookup[col].append(timelabels[timep])  
 
-#class_target_list = [ target ] 
-# SET PARAMETERS for ga
+# SET PARAMETERS for genetic algorithm
 sol_per_pop = spp
 num_generations = numGens
 generations_array = list(range(1,6))
@@ -497,7 +430,6 @@ while numFeatures != current_features:  #current_features >= numFeatures - 1
    for col in thresh_features:
         ser = thresh_features[col]  #ser is a Series
         #I am thinking this extra handling is due to version changes
-        #print(type(ser), ser, type(ser.values[0]) )
         if 'Index' in str(type(ser.values[0])):
            names = ser.values[0].unique()
         else:
@@ -514,14 +446,10 @@ while numFeatures != current_features:  #current_features >= numFeatures - 1
        begin_desired_range = threshold_warm_start
    if current_features < numFeatures : #loop about to exit, take step back
        end_desired_range = threshold_warm_start - 0.0005
-   print("Threshold_warm_start",threshold_warm_start,"Number of features is:",len(warm_start_features), flush=True)   
-
-#threshold_warm_start = (begin_desired_range + end_desired_range) / 2
-#print("After midpoint computing, threshold_warm_start=",threshold_warm_start)
+   print("Threshold_warm_start",threshold_warm_start,"Number of features is:",len(warm_start_features), flush=True)
 
 print(targ, "warm start features:", len(warm_start_features))
 print("features are", warm_start_features)
-#learn_train_warm_start = learn_train[warm_start_features]
 fi = []
 for col in warm_start_features:
     fi.append(unique_columns.index(col))
@@ -540,13 +468,9 @@ for col in importances:
 df_import = pd.DataFrame(data=import_list)
 threshold_recursive = df_import.std() * SD #where SD is user supplied param of 0,2,4,etc.
 threshold_recursive = threshold_recursive.tolist()[0]
-#Manually trying out low values
-#threshold_recursive = threshold_recursive / 2.0
 
-print("threshold_recursive",type(threshold_recursive),threshold_recursive)
-#for target in class_target_list:  
-X = learn_train_warm_start  #should be OK to redefine X here since we never use it again and this is before forking
-
+print("threshold_recursive",type(threshold_recursive),threshold_recursive) 
+X = learn_train_warm_start 
 print("Right before fork, X is ",X,flush=True)
 
 balance_pct = y[y == 1]
@@ -591,7 +515,7 @@ if __name__ == '__main__':
       #on but ONLY THE FIRST TIME. We are not allowed to change it once process has 
       #started and we want to keep everything in the same queue for efficiency. As 
       #long as we balance out the queue at the beginning, we really don't care which
-      #GPU it runs on. Hopefully below will be clear, we send in real GPUNum code
+      #GPU it runs on. We send in real GPUNum code
       #the first time the function runs and then 99 as a flag to never set it again.
       #gpuNum should range from 0 to numOfGPUs
       if overallCounter < QUEUE_SIZE:
@@ -601,7 +525,7 @@ if __name__ == '__main__':
       inputQueue.put( (rand,learning,beta_1, beta_2, 1, gpuNum, recursive_features) )
       counter += 1
       overallCounter += 1
-    else: #Collect results, NOTE LAST 2 output params are blank and not used here
+    else: #Collect results
       for i in range(QUEUE_SIZE):
         (features, mean_fitness, feature_importances_scores_mean, num_features,mean_accuracy,dummy3,dummy4,dummy5,dummy6,l,b1, b2, mean_tps) = outputQueue.get()
         lock.acquire()
@@ -615,12 +539,11 @@ if __name__ == '__main__':
         beta_2_list.append(b2)
         tps_list.append(mean_tps)
         lock.release()
-        #mse_scores.append(mean_mse)
-      #Very sneaky problem here, we also need to start next job running after collecting all results
+      #We also need to start next job running after collecting all results
       inputQueue.put( (rand,learning,beta_1, beta_2, 1, 99, recursive_features) )  #Cheating on gpuNum here, all procs should have their gpuNum already 
       counter = 1
       #overallCounter's job is done here, don't need to do anything with it here 
- #have to collect stragflers for when workload not evenly divisible by QUEUE_SIZE
+ #have to collect stragglers for when workload not evenly divisible by QUEUE_SIZE
  print("Collecting stragglers: ", counter)
  for i in range(counter):
     (features, mean_fitness, feature_importances_scores_mean, num_features,mean_accuracy,dummy3,dummy4, dummy5,dummy6,l,b1, b2, mean_tps) = outputQueue.get()
@@ -687,11 +610,9 @@ if __name__ == '__main__':
     thresh_features = df_features[bool_mask_importances]
     #get list of recursive features at threshold
     names_list = []
-    #print("thresh_features",type(thresh_features),thresh_features)
     for col in thresh_features:
         ser = thresh_features[col]  #ser is a Series
         #I am thinking this extra handling is due to version changes
-        print(type(ser), ser, type(ser.values[0]) )
         if 'Index' in str(type(ser.values[0])):
            names = ser.values[0].unique()
         else:
@@ -754,8 +675,7 @@ if __name__ == '__main__':
        #determine features for num_parents_mating
        #features children generated by selecting top half of parent models
        bisect = np.array(num_parents_mating/2, dtype=int)
- 
-       #print("Before learning/mate_childs " + str(bisect), flush=True)
+
        # generate children by crossover at pivot point
        # learning rate children
        learning_first = learning_mating[:bisect]
@@ -771,7 +691,6 @@ if __name__ == '__main__':
        beta_1_mate_child = np.where(beta_1_mate_child<beta_1_min, beta_1_min, beta_1_mate_child)
        beta_1_mate_child = np.where(beta_1_mate_child>beta_1_max, beta_1_max, beta_1_mate_child)
        beta_1_mate_child = beta_1_mate_child.tolist()
-       #print("After beta_1_mate_childs " + str(beta_1_mate_child), flush=True)
        #beta_2 children
        beta_2_first = beta_2_mating[:bisect]
        beta_2_second = beta_2_mating[bisect:]
@@ -836,8 +755,6 @@ if __name__ == '__main__':
        beta_1_rand_child = np.random.uniform(low=beta_1_min, high=beta_1_max, size=num_parents_rand).tolist()
        beta_2_rand_child = np.random.uniform(low=beta_2_min, high=beta_2_max, size=num_parents_rand).tolist()
        feature_cap = len(recursive_features)
-       #if feature_cap > 10:
-       #    feature_cap = 10
        new_rand_array = np.random.randint(2,high=feature_cap + 1, size=num_parents_rand)
     
        #set up new populations
@@ -888,7 +805,7 @@ if __name__ == '__main__':
                   parallel_b2_pop.append(b2)
                   #tps_list.append(mean_tps)
                   lock.release()
-               #Very sneaky problem here, we also need to start next job running after collecting all results
+               #We also need to start next job running after collecting all results
                inputQueue.put( (rand,learning,beta_1, beta_2, 2, 99, recursive_features) )  #Cheating on gpuNum here, this is first in the queue so will always be 0
                counter = 1
    #NEED TO COLLECT STRAGGLERS IN CASE WORKLOAD WAS NOT EVENLY DIVISIBLE BY QUEUE_SIZE
@@ -950,8 +867,8 @@ if __name__ == '__main__':
        tps_list = [0,1,2]
        for i in range(3):
           #we want to re-create model here as it was found to be best. A little trickier than usual cases
-          #because we want to train model with the features it was trained with before and so we have to rig
-          #random selection. So we send best_features and len(best_features) to ensure all are selected.
+          #because we want to train model with the features it was trained with before and so we have to set
+          #un-random selection. So we send best_features and len(best_features) to ensure all are selected.
           inputQueue.put( (len(best_features[i]),best_learning[i],best_beta_1[i], best_beta_2[i], 3, 99, best_features[i]) ) 
        for i in range(3):
           (features, mean_fitness, feature_importances_scores_mean, num_features, mean_accuracy, mean_precision,mean_recall, mean_f1, mean_auc,l,b1, b2, mean_tps) = outputQueue.get()      
@@ -987,8 +904,6 @@ if __name__ == '__main__':
        best_importances_list = best_importances_list + best_importances
        best_tps = [tps_list[i] for i in range(3)] #best_fitness_idx]
        best_tps_list = best_tps_list + best_tps        
-       #best_importances = [feature_importances_list[i] for i in best_fitness_idx]
-       #best_importances_list = best_importances_list + best_importances
        best_generation_list.append(generation);best_generation_list.append(generation);best_generation_list.append(generation)
        # FIFO queue
        # pull out top fitness models and join to queue
