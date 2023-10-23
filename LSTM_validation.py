@@ -28,9 +28,6 @@ from sklearn.metrics import accuracy_score
 from sklearn.metrics import average_precision_score
 from sklearn.metrics import recall_score
 from sklearn.metrics import f1_score, roc_curve, auc, roc_auc_score
-#from sklearn.metrics import mean_squared_error
-#from sklearn.metrics import r2_score
-#from sklearn.metrics import explained_variance_score
 import os
 import time
 import argparse
@@ -72,7 +69,6 @@ if '3yearonset' in target:
 base_input_dir += '/'
 print('Using basedir',base_input_dir)
 input_dir = base_input_dir + str(threshold) + '/'
-#I'll keep the monthlys here although I don't intend to use them for a while if ever
 targetdf = pd.read_csv('../targets/cbcl_3year_targets_after_methods_rep.csv')
 base = pd.read_csv(input_dir + target + '^baseline_rep_combined_DLFS.csv')
 sixM = pd.read_csv(input_dir + target + '^6_month_rep_combined_DLFS.csv')
@@ -92,7 +88,6 @@ for i in range(len(dfsWeWant)):
       subsInAll = subsInAll.merge(dfsWeWant[i][['subjectkey']], how='inner',on='subjectkey')
 for i in range(len(dfsWeWant)):
    dfsWeWant[i] = subsInAll.merge(dfsWeWant[i], how='left', on='subjectkey')
-   #print("in subject merge loop",i,dfsWeWant[i].shape)
 for i in range(1,len(dfsWeWant)):
    otherDF = dfsWeWant[i]
    if dfsWeWant[0][['subjectkey']].compare(otherDF[['subjectkey']]).empty == False:
@@ -130,7 +125,7 @@ for k,v in countAllCols.items():
       timeseries.append(k)
       
 unique_columns = np.unique(all_cols_list) #NOTE this still has subjectkey which we will want to remove at the verrrry end.
-print("Hopefully uniques(one time only) + timeseries = num_unique_columns",  len(uniques), len(timeseries), len(unique_columns) )
+print("Uniques(one time only) + timeseries = num_unique_columns",  len(uniques), len(timeseries), len(unique_columns) )
 print(dfsWeWant[0].shape[0])
 #subject list sanity check
 for i in range(len(dfsWeWant)):
@@ -144,7 +139,6 @@ unique_columns.remove('subjectkey')
 num_unique_columns = len(unique_columns)
 runningColIndexes = np.zeros((num_unique_columns), dtype=int)
 coef_lookup = dict.fromkeys(unique_columns, [])
-#NOTE empty not zeros below. We want all nans for this experiment
 print('Final_array shape',dfsWeWant[0].shape[0], len(dfsWeWant), num_unique_columns)
 X = np.empty((dfsWeWant[0].shape[0], len(dfsWeWant), num_unique_columns))
 X[:] = nanfill #our masking value we will experiment with 
@@ -155,10 +149,6 @@ for timep in range(len(dfsWeWant)):
          continue
       #need to get index of this in unique_columns
       bigindex = unique_columns.index(col)
-      #The following commented line would create a matrix stacked to fill the early time periods.
-      #where even a column only appearing at 2 year would be pushed into the baseline time period
-      #so occurences rather than actual time period
-      #final_array[:, runningColIndexes[bigindex] ,bigindex] = dfsWeWant[timep][col].to_numpy()
       #THE BELOW LINE WILL COPY data where its time period should be. 
       #So 2 year variables will only appear in twoyear time period.
       X[:, timep, bigindex] = dfsWeWant[timep][col].to_numpy()
@@ -168,14 +158,10 @@ for timep in range(len(dfsWeWant)):
 learn_test = X
 
 
-#BEGIN TRAIN ASEMBLY we have the hassle here of needing the train as well as the test for Shapley. Maybe combine train assembly with test assemblty?
-#targetdf = pd.read_csv('../targets/cbcl_3year_targets_after_methods_tt.csv')
+#We need train as well as test for Shapley.
 baseTrain = pd.read_csv(input_dir + target + '^baseline_tt_combined_DLFS.csv')
-#sixM = pd.read_csv(input_dir + targ + '^6_month_tt_combined_DLFS.csv')
 oneTrain = pd.read_csv(input_dir + target + '^1_year_tt_combined_DLFS.csv')
-#eighteenM = pd.read_csv(input_dir + targ + '^18_month_tt_combined_DLFS.csv')
 twoTrain = pd.read_csv(input_dir + target + '^2_year_tt_combined_DLFS.csv')
-#thirtyM = pd.read_csv(input_dir + targ + '^30_month_tt_combined_DLFS.csv')
 threeTrain = pd.read_csv(input_dir + target + '^3_year_tt_combined_DLFS.csv')
 
 allDFsTrain = [baseTrain, oneTrain, twoTrain, threeTrain]
@@ -188,7 +174,6 @@ for i in range(len(dfsWeWantTrain)):
       subsInAllTrain = subsInAllTrain.merge(dfsWeWantTrain[i][['subjectkey']], how='inner',on='subjectkey')
 for i in range(len(dfsWeWantTrain)):
    dfsWeWantTrain[i] = subsInAllTrain.merge(dfsWeWantTrain[i], how='left', on='subjectkey')
-   #print("in subject merge loop",i,dfsWeWant[i].shape)
 for i in range(1,len(dfsWeWantTrain)):
    otherDFTrain = dfsWeWantTrain[i]
    if dfsWeWantTrain[0][['subjectkey']].compare(otherDFTrain[['subjectkey']]).empty == False:
@@ -200,14 +185,13 @@ columnsByYearTrain = {}
 all_cols_list = None
 for i in range(len(dfsWeWantTrain)):
    columnsByYearTrain[timelabels[i]] = dfsWeWantTrain[i].columns.tolist()
-   #columnsByYear[timeperiods[i]].remove('eventname')
    if i == 0:
       all_cols_list = columnsByYearTrain[timelabels[i]]
    else:
       all_cols_list = all_cols_list + columnsByYearTrain[timelabels[i]]
       
 unique_columns_train = np.unique(all_cols_list) #NOTE this still has subjectkey which we will want to remove at the verrrry end.
-print("Hopefully uniques(one time only) + timeseries = num_unique_columns",  len(uniques), len(timeseries), len(unique_columns) )
+print("Uniques(one time only) + timeseries = num_unique_columns",  len(uniques), len(timeseries), len(unique_columns) )
 print(dfsWeWantTrain[0].shape[0])
 #subject list sanity check
 for i in range(len(dfsWeWantTrain)):
@@ -219,33 +203,22 @@ unique_columns_train = unique_columns_train.tolist()
 #Time for array conversion, even subjectkey has to go now
 unique_columns_train.remove('subjectkey')
 num_unique_columns_train = len(unique_columns_train)
-#runningColIndexes = np.zeros((num_unique_columns_train), dtype=int)
-#coef_lookup = dict.fromkeys(unique_columns_train, [])
-#NOTE empty not zeros below. We want all nans for this experiment
 print('Final_array shape',dfsWeWantTrain[0].shape[0], len(dfsWeWantTrain), num_unique_columns_train)
 background = np.empty((dfsWeWantTrain[0].shape[0], len(dfsWeWantTrain), num_unique_columns_train))
 background[:] = nanfill #our masking value we will experiment with 
 for timep in range(len(dfsWeWantTrain)): 
-   #final_array[:,timep,:] = dfsWeWant[timep][unique_columns].to_numpy()      
    for col in dfsWeWantTrain[timep].columns:
       if col in ['subjectkey', 'eventname']:
          continue
       #need to get index of this in unique_columns
       bigindex = unique_columns_train.index(col)
-      #The following commented line would create a matrix stacked to fill the early time periods.
-      #where even a column only appearing at 2 year would be pushed into the baseline time period
-      #so occurences rather than actual time period
-      #final_array[:, runningColIndexes[bigindex] ,bigindex] = dfsWeWant[timep][col].to_numpy()
-      #THE BELOW LINE WILL COPY data where its time period should be. 
-      #So 2 year variables will only appear in twoyear time period.
+      #Copy data where its time period should be, so 2 year variables will only appear in twoyear time period.
       background[:, timep, bigindex] = dfsWeWantTrain[timep][col].to_numpy()
-      #runningColIndexes[bigindex] += 1
-      #coef_lookup[col].append(timelabels[timep])  
-#END TRAIN ASSEMBLY - background was the point
+#END train assembly
 
-#Makes indexing easier if feature indexes match up WHICH THEY SHOULD, let's check!
+#Double check that feature indexes match up 
 print(np.array_equal(unique_columns_train, unique_columns))
-#select GPU if desired
+
 with tf.device('device:GPU:0'):
     
     #set number of models you wish to evaluate
@@ -259,7 +232,7 @@ with tf.device('device:GPU:0'):
          return accuracy_score(y,y_predict_classes)
 
     optoption = 'AdamW'
-    #OUTPUT FILES - get base path and name string for pickle
+    #Set output filepaths
     basepath = "IEL_ann_validation"
     if UseTPs == "True":
        basepath += "TPs"
@@ -270,17 +243,14 @@ with tf.device('device:GPU:0'):
     shapley_scores_dir = basepath + '/Shapley_scores'
     os.makedirs(shapley_scores_dir)
 
-    #test with bool threshold correl
+    #Get most important features from recursion (previous step in pipeline)
     input_basepath = "IEL_ann_recursive"
     if UseTPs == "True":
        input_basepath += "TPs"
     input_basepath += '_' + time_periods + "/" + target + os.path.sep + str(SD) + "SD" + os.path.sep + target + '_' + optoption
 #filenames are like phenotypic_anx_pres_Adam_models.csv
-#parameters_filename = parameters_basepath + target + '.csv'
     parameters_filename = input_basepath + '_models' + str(SD) + "SD"
     #models filename is the same
-    #if UseTPs == "True":
-    #   parameters_filename += "_TP"
     parameters_filename += '.csv'
     parameters = pd.read_csv(parameters_filename)
     parameters = parameters.drop(parameters.columns[0], axis=1)
@@ -304,10 +274,6 @@ with tf.device('device:GPU:0'):
     #Need to use np.flip with accuracy or r2 to reverse sort
     accuracy_idx = np.flip(np.argsort(parameters['accuracy']))
     top_accuracy_idx = accuracy_idx[:accuracy_threshold].tolist()
-    #IMPORTANT: note that accuracy_idx is a series. The above line that slices is supported by series. 
-    #But doing a direct index is NOT supported. accuracy_idx[87] != accuracy_idx.iloc[87]
-    #The iloc is the correct way to do this
-    #top_accuracy_idx = [accuracy_idx.iloc[87]]
     learning_list = parameters['learning'].to_list()
     learning_select = [learning_list[i] for i in top_accuracy_idx]
     beta_1_list = parameters['beta_1'].to_list()
@@ -315,7 +281,7 @@ with tf.device('device:GPU:0'):
     beta_2_list = parameters['beta_2'].to_list()
     beta_2_select = [beta_2_list[i] for i in top_accuracy_idx]
 
-    #Experimental here - if we're doing time periods and the importance of a feature/TP is 0, then it was nanfilled before and
+    #If we're doing time periods and the importance of a feature/TP is 0, then it was nanfilled before and
     #we don't want to regard it as important now.
     if UseTPs == "True":
        bool_mask_importances = (importances > 0.0) | (importances < - 0.0)
@@ -333,13 +299,10 @@ with tf.device('device:GPU:0'):
     features_select = [names_list[i] for i in top_accuracy_idx]
           
     #create X,y
-    #X_df = learn_test
-    #y = y.astype('int64')
     y = y.to_numpy()
     y_true = y
-    #print("X_df, y shapes", X_df.shape,y.shape)
     print("0s/1s count for",target,len(np.where(y == 0)[0]), len(np.where(y == 1)[0]))
-    #exit(1)
+   
     #create lists for performance measures
     accuracy_list = []
     precision_list = []
@@ -358,11 +321,10 @@ with tf.device('device:GPU:0'):
     count = 0   
     # perform validation
     for feature, learning, beta_1, beta_2 in zip(features_select, learning_select, beta_1_select, beta_2_select):
-            print('FEATURE:',feature) 
-             
+            print('FEATURE:',feature)         
             indexeses = [] 
             final_col_names = []        
-            #BEGIN WORK TO DO IF DOING TPs
+            #Special work for Timeperiods
             if UseTPs == "True":
                featuresTPs_dict = {}
                for fi in range(len(feature)):
@@ -413,7 +375,6 @@ with tf.device('device:GPU:0'):
             model = Sequential()
             model.add(Bidirectional(LSTM(300, activation='tanh', return_sequences=True))) #,input_shape=(final_array.shape[1], final_array.shape[2])))) #
             model.add(Bidirectional(LSTM(300, activation='tanh')))
-            #model.add(Dense(1)) #for regression
             model.add(Dense(2, activation = 'softmax', name='output'))
             #opt = Adam(lr = learning, beta_1=beta_1, beta_2=beta_2)
             wd = .01 # pytorch default
@@ -439,17 +400,13 @@ with tf.device('device:GPU:0'):
                         train_subset[:,tp,f] = nanfill
                         print('Nanfilling time period',tp,'feature',final_col_names[f])
             
-            #train_subset = train_subset.to_numpy()
             print("X_sample.shape",X_sample.shape, "Train_subset.shape", train_subset.shape)
             ge = shap.GradientExplainer( model, train_subset)
-            print("between gradexplainer instantiation and shap_values call")
             shap_values = ge.shap_values(X_sample, nsamples=X_sample.shape[0] * 2)
             if isinstance(shap_values, list):
                if len (shap_values) != 2:
                  print('shap_values list should be == numClasses', flush=True)
                  exit(1)
-            #   else:
-            #     print('right after DE shap values call, length of list is 2 and [1] shape is ', shap_values[1].shape, flush=True) 
             else:
                print('SHAP_values is NOT a list. Exiting.',flush=True)
                exit(1)
@@ -468,14 +425,12 @@ with tf.device('device:GPU:0'):
 
             #BEGIN OF SHAP FEATURES ONLY
             feature_mean_shap = np.mean(shap_values, axis=1)
-            #print(shap_values)
             #print(shap_values.shape)  #(76,4,7)
-            #print(shap_values_reshape.shape) #(76,28)
-            #I REALLY WANT TO RESHAPE THIS ONE TO A MEAN and be 76,7            
+            #print(shap_values_reshape.shape) #(76,28)         
             print(feature_mean_shap.shape) #(76,7)
             test_mean = np.mean(X_sample, axis=1)
             print(test_mean.shape)
-            data_frame = pd.DataFrame( test_mean, columns=final_col_names)   #columns=feature)
+            data_frame = pd.DataFrame( test_mean, columns=final_col_names)  
             shap.summary_plot(feature_mean_shap, data_frame, max_display=len(feature_importances), plot_size=(7,5), show=False, color_bar=None, color_bar_label=[], class_names=[],title=None)
             plt.title("") #("Shapley value-impact on model output", x=-10)
             plt.xlabel("")
@@ -485,36 +440,28 @@ with tf.device('device:GPU:0'):
             plt.savefig(shapley_scores_dir + '/Model_' + str(count) + '_shapley_plot.png')
             plt.close()
             #We want to write out these indvidual files
-            #shapley_frame[IDkey] = X_df[IDkey].copy() #Should be able to get away with this since no sorting/splitting/kfolds here
             shapley_frame = pd.DataFrame(feature_mean_shap, columns=final_col_names)
             shapley_frame.to_csv(shapley_scores_dir + '/Model_' + str(count) + '_shapley_values.csv')
-            
             #END OF SHAP FEATURES ONLY 
+       
             #BEGIN SHAP_FEATURES_TPs   
             features_TPs_flatten = []
             countercheck = 0
             for f in range(len(final_col_names)):
                for t in range(X_sample.shape[1]):
-                  #print('Feature,value',features[f], feature_importances_scores_withTPs_mean[t, f ])
                   if final_col_names[f] not in features_TPs[countercheck]:
                      print('feature name mismatch')
                      exit(1)
                   features_TPs_flatten.append(feature_importances_withTPs[t, f ])
                   countercheck += 1
             feature_importances_scores_withTPs.append(features_TPs_flatten) 
-            #print('shap_values before reshape', shap_values.shape, shap_values)
-            #ORDERING IS WORKING LIKE I THOUGHT with order=F
-            shap_values_reshape = np.reshape(shap_values, (shap_values.shape[0], shap_values.shape[1] * shap_values.shape[2]), order='F') 
-            #shap.image_plot(shap_values, X_sample)           
+            #order=F is important here
+            shap_values_reshape = np.reshape(shap_values, (shap_values.shape[0], shap_values.shape[1] * shap_values.shape[2]), order='F')        
             #NEED TO MAKE NEW DATAFRAME here with actual values of test
             X_sample_reshape = np.reshape(X_sample, (X_sample.shape[0], X_sample.shape[1] * X_sample.shape[2]), order='F') 
-            #print('shap values after reshape', shap_values_reshape.shape, shap_values_reshape)
             print(len(features_TPs_flatten), len(features_TPs))
-            #print(features_TPs)
-            #exit(0)
             data_frame = pd.DataFrame(X_sample_reshape, columns=features_TPs)
             data_frame.to_csv(shapley_scores_dir + '/Model_' + str(count) + '_CheckTPs.csv', index=False)
-            #shap.image_plot(shap_values_reshape, data_frame.to_numpy())
             shap.summary_plot(shap_values_reshape, data_frame, max_display=shap_values_reshape.shape[1], plot_size=(7,5), show=False, color_bar=None, color_bar_label=[], class_names=[],title=None)
             plt.title("") #("Shapley value-impact on model output", x=-10)
             plt.xlabel("")
@@ -524,14 +471,11 @@ with tf.device('device:GPU:0'):
             plt.savefig(shapley_scores_dir + '/Model_' + str(count) + '_shapley_plotTPs.png')
             plt.close()
             #We want to write out these indvidual files
-            #shapley_frame[IDkey] = X_df[IDkey].copy() #Should be able to get away with this since no sorting/splitting/kfolds here
             shapley_frame = pd.DataFrame(shap_values_reshape, columns=features_TPs)
             shapley_frame.to_csv(shapley_scores_dir + '/Model_' + str(count) + '_shapley_valuesTPs.csv')            
             #END SHAP FEATURES TPS
             
             count += 1
-            #shapley_scores.append(feature_importances_withTPs)
-            #End of Shapley
             accuracy = accuracy_score(y_true, y_predict_classes)
             accuracy_list.append(accuracy)
             precision = average_precision_score  (y_true, y_predict_classes)
@@ -543,10 +487,6 @@ with tf.device('device:GPU:0'):
             y_predict_raw_pos = []
             for tup in y_predict_raw:
                y_predict_raw_pos.append(tup[1])
-            #print("y_true",y_true)
-            #print("y_predict_classes", y_predict_classes)
-            #print("y_predict_raw", y_predict_raw)
-            #print("This should be prob estimate of positive class", y_predict_raw_pos)
             fpr, tpr, thresholds = roc_curve(y_true, y_predict_raw_pos, pos_label=1) #pos_label=1 because our y is in [0,1]
             fpr_list.append(fpr)
             tpr_list.append(tpr)
@@ -584,8 +524,6 @@ with tf.device('device:GPU:0'):
     best_ga_ann_models = pd.DataFrame(data=best_accuracy_models, columns = ['learning_rate', 'beta_1', 'beta_2', 'accuracy', 'precision', 'recall', 'f1', 'auc', 'num_features','TP_Importances'])
     best_ga_ann_importances = pd.DataFrame(data=feature_importances_scores).T
     best_ga_ann_importances_TPs = pd.DataFrame(data=feature_importances_scores_withTPs).T
-    #importances = Shapley here so we don't need them here
-#    best_ga_ann_shapley = pd.DataFrame(data=feature_importances_scores).T
         
     #save features
     features_path = "ga_ann_classification_test_unseen_elbow_" + str(SD) + "SD_best_features_"
@@ -614,14 +552,6 @@ with tf.device('device:GPU:0'):
     best_ga_ann_importances_TPs.to_csv(importances_csv_filename.replace('best_importances', 'best_importances_TP'))
     #save shapley
     #importances = Shapley here so we don't need them here
-    '''
-    shapley_path = "ga_ann_classification_test_unseen_elbow_" + str(SD) + "SD_best_shapley_"
-    shapley_path = os.path.join(basepath,shapley_path)
-    shapley_filename = shapley_path + basename
-    shapley_csv_filename = shapley_path + basename + '.csv'
-    best_ga_ann_shapley.to_pickle(shapley_filename)
-    best_ga_ann_shapley.to_csv(shapley_csv_filename)
-    '''
  
     #save zip of shapley raw scores and remove the raw scores dir
     shapley_scores_path = "ga_ann_classification_test_unseen_elbow_" + str(SD) + "SD_FullShapley_scores"
