@@ -900,10 +900,8 @@ if __name__ == '__main__':
    
        print(str(queue.shape) + " being checked against a shape of " + str(queue_len) + " " + str(FIFO_len), flush=True)
            
-    #set condition for convergence
        if queue.shape < (queue_len, FIFO_len):
           generation += 1
-          #timefile.write("Queue.shape is < queue_len,FIFO_Len, generation now = " + str(generation) + '\n')
        else:
           queue = np.delete(queue,0,1)
           generation += 1
