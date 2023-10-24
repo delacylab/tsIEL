@@ -862,10 +862,9 @@ if __name__ == '__main__':
    queue = np.hstack((queue, top_fitness)) #hstack is basically array concat
    print(str(queue.shape) + " being checked against a shape of " + str(queue_len) + " " + str(FIFO_len), flush=True)
    if queue.shape < (queue_len, FIFO_len):
-      queue = np.delete(queue,0,1)
       generation += 1
-         #timefile.write("Queue.shape is < queue_len,FIFO_Len, generation now = " + str(generation) + '\n')
    else:
+      queue = np.delete(queue,0,1)
       generation += 1
    print("Generation " + str(generation - 1) + " completed in " + str(time.time() - gen_start_time) + " seconds", flush=True)
    print("Available memory is now: " + str(psutil.virtual_memory().available / 1024 / 1024 / 1024) + "GB", flush=True)
