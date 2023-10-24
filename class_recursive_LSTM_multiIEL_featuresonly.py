@@ -173,18 +173,16 @@ def makeMSEOneOutputModel(iq, outq):
          if partNum == 1 or partNum == 3:
             ge = shap.GradientExplainer( model, X_train)
             shap_values = ge.shap_values(X_test)
-            #de = shap.DeepExplainer( model, X_train)
-            #shap_values = de.shap_values(X_test, check_additivity=True)
             if isinstance(shap_values, list):
-               if len (shap_values) != 2:
+               if len (shap_values) != 2: #0/1 are possible values of target
                  print('shap_values list should be == numClasses', flush=True)
                  exit(1)
             else:
                print('SHAP_values is NOT a list. Exiting.',flush=True)
                exit(1)
             shap_values = shap_values[1]
-            shap_values = np.abs(shap_values)
-            #next line averages the feature values across all rows
+            shap_values = np.abs(shap_values) # shape here is (numRows, numTimePeriods, numFeatures)
+            #next line averages the feature values across all rows 
             feature_importances = np.mean(shap_values, axis=0) 
             #Now feature_importances Shape is (numTimePeriods,numFeatures)            
             base_score, score_decreases = get_score_importances(acc_score, X_test,y[test])
@@ -243,15 +241,15 @@ def makeMSEOneOutputModel(iq, outq):
       outq.put( (features, mean_fitness, feature_importances_scores_mean, num_features, mean_accuracy, mean_precision,mean_recall, mean_f1, mean_auc,learning,beta_1, beta_2, mean_tps) )
 
 prog_start_time = time.time()
-targ = args.target
+target = args.target #Condition such as anxiety or somatic 
+SD = args.SD         #standard deviations - see recursion script
+IDkey = args.IDkey   #row level subject identification column for dataset - for ABCD V4, it is subjectkey
+threshold = args.threshold #Lasso coefficient threshold for columns to be included in dataset, we used 0.0
 fname = args.target
 numFeatures = int(args.numFeatures)
-SD = int(args.SD)
-IDkey = args.IDkey
 numOfGPUs = args.numOfGPUs
 coresPerGPU = args.coresPerGPU
-threshold = args.threshold
-time_periods = str(args.tps) 
+time_periods = str(args.tps) #looks like 0123 (baseline,1yr,2yr,3yr)
 #weighted = args.weighted
 weighted = "False"
 if weighted != "True" and weighted != "False":
@@ -334,7 +332,7 @@ three = pd.read_csv(input_dir + targ + '^3_year_tt_combined_DLFS.csv')
 
 allDFs = [base, one, two, three]
 dfsWeWant = [ allDFs[i] for i in time_periods_list ] 
-
+#Create target cols and make sure we are using correct targets corresponding to subjects in dataset
 for i in range(len(dfsWeWant)):
    if i == 0:
       subsInAll = dfsWeWant[0][['subjectkey']]
@@ -354,6 +352,8 @@ if y['subjectkey'].compare(dfsWeWant[0]['subjectkey']).empty == False:
 y = y[targ]
 print('target length should match earliest row count',len(y))
 
+#When constructing timeseries dataset, it is important to know whether columns are unique
+#(only appearing in one time period) or a true timeseries col (column has data for multiple time periods)
 #count columns both by year and determine whether they are timeseries cols or not
 columnsByYear = {}
 #want list of unique cols that appear in all dfs
