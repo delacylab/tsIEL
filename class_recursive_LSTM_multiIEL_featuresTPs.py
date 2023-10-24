@@ -46,7 +46,7 @@ layer_size = 300
 spp = 100 
 numGens = 401 
 optoption = 'AdamW'
-
+#
 def makeMSEOneOutputModel(iq, outq):
       #Imports are done here because of an odd CUDA limitation that prevents
       #forked multiprocesses from getting another CUDA context. 
