@@ -1016,60 +1016,6 @@ if __name__ == '__main__':
           generation += 1
           #timefile.write("Queue.shape is < queue_len,FIFO_Len, generation now = " + str(generation) + '\n')
        else:
-      #Some explanations: 
-      # numpy.std returns the standard deviation, a measure of the spread of a distribution, of the array elements. The standard deviation is computed for the flattened array by default, otherwise over the specified axis.
-      #np.diff Calculate the n-th discrete difference along the given axis, The first difference is given by out[i] = a[i+1] - a[i] along the given axis, higher differences are calculated by using diff recursively.
-      #np.sum Sum of array elements over a given axis.
-      #roll_std/min_sum is the sum of the discrete differences in the standard deviation/smallest element of queue.
-      #I don't think I like the np.diff function here. Queue could be all
-      #small values or positive/negative of large vallues and results would
-      #all be small. Trying some new measures.
-          roll_std_sum = np.sum(np.diff(np.std(queue[:,-8:],axis=0)))   
-          roll_min_sum = np.sum(np.diff(np.min(queue[:,-8:],axis=0)))
-          roll_abs_std_sum = np.sum(np.absolute(np.diff(np.std(queue[:,-8:],axis=0)))) 
-          roll_abs_min_sum = np.sum(np.absolute(np.diff(np.min(queue[:,-8:],axis=0))))
-          stdstd = np.std(np.std(queue[:,-8:],axis=0))    
-          stdmin = np.std(np.min(queue[:,-8:],axis=0))
-          meanstd = np.mean(np.std(queue[:,-8:],axis=0))
-          stdmean = np.std(np.mean(queue[:,-8:],axis=0))
-          #NEW CONVERGENCE CHECK, the .25 is a scaling factor to allow for small upward hiccups
-          trend_roll_abs_std_sum = np.sum(np.diff(roll_abs_std_list))
-          trend_roll_abs_min_sum = np.sum(np.diff(roll_abs_min_list))
-      #TO SUM UP, below checkes if we are trending downward which we like and don't want to stop
-      #If the current value - the last value of roll_abs_std/min_sum is > than the amount 
-      #we're trending down, then we might have hit the bottom and we want to stop.
-          if trend_roll_abs_std_sum < 0.0 and roll_abs_std_sum - roll_abs_std_list[-1:]  > np.absolute(trend_roll_abs_std_sum) * 0.25:
-             print("CONVERGENCE in generation ",generation, " - roll_abs_std_sum, trend was ", trend_roll_abs_std_sum, " current value was ", roll_abs_std_sum,flush=True)
-          if trend_roll_abs_min_sum < 0.0 and roll_abs_min_sum - roll_abs_min_list[-1:] > np.absolute(trend_roll_abs_min_sum) * 0.25:
-             print("CONVERGENCE in generation ",generation, " - roll_abs_min_sum, trend was ", trend_roll_abs_min_sum, " current value was ", roll_abs_min_sum,flush=True)
-      
-          roll_std_list.append(roll_std_sum)
-          roll_min_list.append(roll_min_sum)
-          roll_abs_std_list.append(roll_abs_std_sum)
-          roll_abs_min_list.append(roll_abs_min_sum)
-          std_std_list.append(stdstd)
-          std_min_list.append(stdmin)
-          mean_std_list.append(meanstd)
-          std_mean_list.append(stdmean)
-
-          #BELOW: 3 is for top 3 fitness values which is most important
-      #8 is to check the last 8 generations
-          top3rows = np.array(queue)[:3, -8:].T
-          meanArr = [np.mean(c) for c in top3rows]
-          meanArrFitness = np.mean(meanArr)
-          sumGenDiff = np.sum(np.diff(meanArr))  
-          percentError = sumGenDiff / meanArrFitness
-          percentError_list.append(percentError)
-
-      #So the following is saying if roll_std_sum is not really small or roll_min_sum is not really small, delete the first element in queue along axis=1,gen+=1 else converge
-      #I would like to restate as if roll_std_sum is really small AND roll_min_sum is really small then converge else delete first thing in queue and generation+=1
-          print("generation,roll_std_sum, roll_abs_std_sum, roll_min_sum, roll_abs_min_sum,stdstd,stdmin, stdmean,sumGenDiff,percentError: " + str(generation) + ", " + str(roll_std_sum) + ", " + str(roll_abs_std_sum) + ", " + str(roll_min_sum) + ", " + str(roll_abs_min_sum) + ", " + str(stdstd) + ", " + str(stdmin) + ", " + str(stdmean) + ", " + str(sumGenDiff) + ", " + str(percentError)  +'\n', flush=True)
-      #ORIGINAL ROLL CONDITION HERE
-      #if roll_std_sum not in np.arange(-0.01,0.01) or roll_min_sum not in np.arange(-0.01,0.01):
-      #TESTING HERE, if this was a real condition we would set is_converged and
-      #do the else
-      #if percentError < 10.0: #New convergence condition
-         #is_converged = True
           queue = np.delete(queue,0,1)
           generation += 1
           print("Generation " + str(generation - 1) + " completed in " + str(time.time() - gen_start_time) + " seconds", flush=True)
@@ -1091,24 +1037,8 @@ if __name__ == '__main__':
     recursive_best_featureTP_list = recursive_best_featureTP_list + best_featureTP_list
     recursive_best_feature_importances_TP_list = recursive_best_feature_importances_TP_list + best_importances_TPs_list
     recursive_best_new_fitness_list = recursive_best_new_fitness_list + best_new_fitness_list
-    #Actually in-progress saving should be limited to here now!
-    in_progress_features = pd.DataFrame(data=recursive_best_feature_list).T
-    in_progress_importances = pd.DataFrame(data=recursive_best_importances_list).T
-    in_progress_best_featuresTPs = pd.DataFrame(data=recursive_best_featureTP_list).T
-    in_progress_best_importancesTPs = pd.DataFrame(data=recursive_best_feature_importances_TP_list).T     
-    #print("recursive_best_fitness_list",len(recursive_best_fitness_list))
-    #print("recursive_best_learning_list",len(recursive_best_learning_list))
-    #print("recursive_best_beta1_list.shape",len(recursive_best_beta_1_list))
-    #print("recursive_best_beta2_list.shape",len(recursive_best_beta_2_list))
-    #print("recursive_best_accuracy_list.shape",len(recursive_best_accuracy_list))
-    #print("recursive_best_precision_list.shape",len(recursive_best_precision_list))
-    #print("recursive_best_recall_list.shape",len(recursive_best_recall_list))
-    #print("recursive_best_numfeature_list.shape",len(recursive_best_num_feature_list))
-    #print("recursive_best_generation_list.shape",len(recursive_best_generation_list))
-
     g += 1
-    #gc.collect()
-   #print("Used memory after gc is now: " + str(psutil.virtual_memory().used / 1000 / 1000 / 1000) + "GB", flush=True)
+
    #END OF while generation in range(num_generations)
    #convergence_test == is_converged #??? This statement should have no effect.
  #collect best recursive models from each generation based on fitness
@@ -1125,26 +1055,7 @@ if __name__ == '__main__':
  best_ann_ga_importances.to_csv(importances_filename)
  best_ann_ga_featuresTPs.to_csv(features_TP_filename)
  best_ann_ga_importancesTPs.to_csv(importances_TP_filename)
- if len(roll_std_list) > 0:
-    print("roll_std_list length is ",len(roll_std_list))
-    roll_std_df = pd.Series(data=roll_std_list)
-    roll_min_df = pd.Series(data=roll_min_list)
-    roll_abs_std_df = pd.Series(data=roll_abs_std_list) 
-    roll_abs_min_df = pd.Series(data=roll_abs_min_list)
-    std_std_df = pd.Series(data=std_std_list)
-    std_min_df = pd.Series(data=std_min_list)
-    mean_std_df = pd.Series(data=mean_std_list)
-    std_mean_df = pd.Series(data=std_mean_list)
-    percent_error_df = pd.Series(data=percentError_list)
-    roll_std_df.to_csv(os.path.join(basepath,"rollstd" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".csv"))
-    roll_min_df.to_csv(os.path.join(basepath,"rollmin" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".csv"))
-    roll_abs_std_df.to_csv(os.path.join(basepath,"rollabsstd" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".csv"))
-    roll_abs_min_df.to_csv(os.path.join(basepath,"rollabsmin" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".csv"))
-    std_std_df.to_csv(os.path.join(basepath,"stdstd" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".csv"))
-    std_min_df.to_csv(os.path.join(basepath,"stdmin" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".csv"))
-    mean_std_df.to_csv(os.path.join(basepath,"meanstd" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".csv"))
-    std_mean_df.to_csv(os.path.join(basepath,"stdmean" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".csv"))
-    percent_error_df.to_csv(os.path.join(basepath,"percentError" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".csv"))
+
  print("end routine")
  print("time elapsed is:", np.round((time.time() - prog_start_time)/60), "minutes")
  print("Gathering processes...",flush=True)
