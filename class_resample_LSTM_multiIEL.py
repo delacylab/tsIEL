@@ -860,10 +860,7 @@ if __name__ == '__main__':
    top_fitness = fitness_round[top_fitness_idx]
    top_fitness = top_fitness.reshape(queue_len,1)  #so this typically is 60,1
    queue = np.hstack((queue, top_fitness)) #hstack is basically array concat
-   
    print(str(queue.shape) + " being checked against a shape of " + str(queue_len) + " " + str(FIFO_len), flush=True)
-           
-   #set condition for convergence
    if queue.shape < (queue_len, FIFO_len):
       queue = np.delete(queue,0,1)
       generation += 1
