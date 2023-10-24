@@ -28,13 +28,13 @@ parser.add_argument('threshold',help='lasso threshold to use')
 parser.add_argument('tps',help='should look like 0123')
 args = parser.parse_args()
 prog_start_time = time.time()
-targ = args.target
+target = args.target #Condition such as anxiety or somatic 
+IDkey = args.IDkey   #row level subject identification column for dataset - for ABCD V4, it is subjectkey
+threshold = args.threshold #Lasso coefficient threshold for columns to be included in dataset, we used 0.0
 fname = args.target
-IDkey = args.IDkey
 numOfGPUs = args.numOfGPUs
 coresPerGPU = args.coresPerGPU
 QUEUE_SIZE = coresPerGPU * numOfGPUs  #This 32 will need to be adjusted depending on workload size
-threshold = args.threshold
 time_periods = str(args.tps) #Don't want any confusion here
 print(time_periods)
 weighted = "False" #args.weighted
@@ -327,7 +327,7 @@ thirtyM = pd.read_csv(input_dir + targ + '^30_month_tt_combined_DLFS.csv')
 three = pd.read_csv(input_dir + targ + '^3_year_tt_combined_DLFS.csv')
 allDFs = [base, one, two, three]
 dfsWeWant = [ allDFs[i] for i in time_periods_list ] 
-
+#Create target cols and make sure we are using correct targets corresponding to subjects in dataset
 for i in range(len(dfsWeWant)):
    if i == 0:
       subsInAll = dfsWeWant[0][['subjectkey']]
@@ -347,7 +347,8 @@ if y['subjectkey'].compare(dfsWeWant[0]['subjectkey']).empty == False:
 y = y[targ]
 print('target length should match earliest row count',len(y))
 print("0s/1s count for",targ,len(np.where(y == 0)[0]), len(np.where(y == 1)[0]))
-
+#When constructing timeseries dataset, it is important to know whether columns are unique
+#(only appearing in one time period) or a true timeseries col (column has data for multiple time periods)
 #count columns both by year and determine whether they are timeseries cols or not
 columnsByYear = {}
 #want list of unique cols that appear in all dfs
@@ -404,7 +405,6 @@ for timep in range(len(dfsWeWant)):
       X[:, timep, bigindex] = dfsWeWant[timep][col].to_numpy()
       runningColIndexes[bigindex] += 1
       coef_lookup[col].append(timelabels[timep])  
-
          
 #shuffle shuffles along first dimension only so it's ok to use for 2D or 3D matrices
 #parallel_func uses kfold so no shuffling necessary
@@ -447,7 +447,7 @@ if __name__ == '__main__':
       #on but ONLY THE FIRST TIME. We are not allowed to change it once process has 
       #started and we want to keep everything in the same queue for efficiency. As 
       #long as we balance out the queue at the beginning, we really don't care which
-      #GPU it runs on. Hopefully below will be clear, we send in real GPUNum code
+      #GPU it runs on. We send in real GPUNum code
       #the first time the function runs and then 99 as a flag to never set it again.
       #gpuNum should range from 0 to numOfGPUs
       if overallCounter < QUEUE_SIZE:
@@ -473,8 +473,8 @@ if __name__ == '__main__':
         featureTP_list.append(features_TPs)
         feature_importances_TP_list.append(feature_TPs_flatten)        
         lock.release()
-      #Very sneaky problem here, we also need to start next job running after collecting all results
-      inputQueue.put( (rand,learning,beta_1, beta_2, 1, 99) )  #Cheating on gpuNum here, all procs should have their gpuNum already 
+      #We also need to start next job running after collecting all results
+      inputQueue.put( (rand,learning,beta_1, beta_2, 1, 99) )  #99=all procs should have their gpuNum already 
       counter = 1
       #overallCounter's job is done here, don't need to do anything with it here 
  #have to collect stragglers for when workload not evenly divisible by QUEUE_SIZE
@@ -718,7 +718,7 @@ if __name__ == '__main__':
            featureTP_list.append(features_TPs)
            feature_importances_TP_list.append(feature_TPs_flatten)            
            lock.release()
-        #Very sneaky problem here, we also need to start next job running after collecting all results
+        #We also need to start next job running after collecting all results
         inputQueue.put( (feature,learning,beta_1, beta_2, 2, 99) )  #Cheating on gpuNum here, this is first in the queue so will always be 0
         counter = 1
    #NEED TO COLLECT STRAGGLERS IN CASE WORKLOAD WAS NOT EVENLY DIVISIBLE BY QUEUE_SIZE
