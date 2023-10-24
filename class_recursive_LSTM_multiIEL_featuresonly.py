@@ -10,12 +10,7 @@ from collections import Counter
 from eli5.permutation_importance import get_score_importances
 from sklearn.model_selection import cross_val_predict
 from sklearn.model_selection import StratifiedKFold, KFold
-from sklearn.metrics import mean_squared_error
-from sklearn.metrics import r2_score
-from sklearn.metrics import explained_variance_score
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import average_precision_score
-from sklearn.metrics import recall_score
+from sklearn.metrics import accuracy_score, average_precision_score, recall_score
 from sklearn.metrics import f1_score, roc_curve, auc, roc_auc_score
 from datetime import datetime
 import multiprocessing
