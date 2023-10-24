@@ -865,6 +865,7 @@ if __name__ == '__main__':
            
    #set condition for convergence
    if queue.shape < (queue_len, FIFO_len):
+      queue = np.delete(queue,0,1)
       generation += 1
          #timefile.write("Queue.shape is < queue_len,FIFO_Len, generation now = " + str(generation) + '\n')
    else:
